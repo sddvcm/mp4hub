@@ -19,6 +19,7 @@ MP4Hub 是面向 Windows 的本地离线视频库与播放器：将多个视频�
 | --- | --- |
 | [使用说明 USAGE.md](USAGE.md) | 面向使用者的完整上手与日常操作指南 |
 | [更新说明 CHANGELOG.md](CHANGELOG.md) | 各版本的功能变更与升级提示 |
+| [相对上游的功能差异](docs/DIFF-FROM-UPSTREAM.md) | 逐项列出本定制版相对上游 AVHub 新增的功能与修复的问题 |
 | [docs/](docs/) | 逐轮迭代、问题分析与专项验证记录 |
 | [README.en.md](README.en.md) | English README |
 

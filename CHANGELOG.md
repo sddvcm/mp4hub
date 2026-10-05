@@ -4,6 +4,8 @@
 
 版本历史与逐轮开发记录另见 [docs/](docs/)；本文件面向使用者，只描述可感知的功能变化。
 
+> 需要了解**相对上游 AVHub 具体新增了什么、修复了什么**（含技术实现锚点），见 [docs/DIFF-FROM-UPSTREAM.md](docs/DIFF-FROM-UPSTREAM.md)。
+
 ---
 
 ## v0.2.0 — 2026-10-05

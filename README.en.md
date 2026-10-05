@@ -19,6 +19,7 @@ Two runtime modes are available:
 | --- | --- |
 | [Usage guide (USAGE.md, Chinese)](USAGE.md) | Complete onboarding and day-to-day guide for end users |
 | [Changelog (CHANGELOG.md, Chinese)](CHANGELOG.md) | Feature changes and upgrade notes per version |
+| [Diff from upstream (Chinese)](docs/DIFF-FROM-UPSTREAM.md) | Itemized features added and issues fixed versus the upstream AVHub |
 | [docs/](docs/) | Per-iteration development, analysis, and verification records |
 | [README.md](README.md) | Chinese README |
 
