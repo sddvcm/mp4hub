@@ -32,7 +32,11 @@ export function ScreenshotSettings({busy,changeBusy,enabled}:{busy:boolean;chang
     <label htmlFor="screenshot-directory">默认保存目录</label>
     <div className="screenshot-directory-field"><input id="screenshot-directory" disabled={locked} value={directory} placeholder="留空使用应用数据目录" onChange={event=>setDirectory(event.target.value)}/>
       <Button icon="folder" disabled={locked} onClick={()=>void action(async()=>{
-        const value=await api<{directory?:string;cancelled?:boolean}>('/api/screenshots/pick',{method:'POST'});
+        // Desktop builds use Electron's native dialog (the frozen backend has no tkinter).
+        const chosen=await window.avhubDesktop?.pickDirectory('screenshot');
+        if(chosen&&'cancelled' in chosen)return;
+        const value=await api<{directory?:string;cancelled?:boolean}>('/api/screenshots/pick',
+          chosen?json('POST',{path:chosen.path}):{method:'POST'});
         if(value.directory)setDirectory(value.directory);
       })}>浏览</Button></div>
     <small className="screenshot-path" title={settings?.effective_directory}>当前保存到：{settings?.effective_directory??'正在读取…'}</small>

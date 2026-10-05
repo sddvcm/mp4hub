@@ -10,6 +10,6 @@ export function desktopIconPath(projectRoot: string, resourcesPath: string, pack
 export function loadDesktopIcon(projectRoot: string, resourcesPath: string, packaged: boolean): NativeImage {
   const filename = desktopIconPath(projectRoot, resourcesPath, packaged);
   const icon = nativeImage.createFromPath(filename);
-  if (icon.isEmpty()) throw new Error(`无法加载 AVHub 应用图标：${filename}`);
+  if (icon.isEmpty()) throw new Error(`无法加载 MP4Hub 应用图标：${filename}`);
   return icon;
 }

@@ -10,6 +10,7 @@ import { IconButton, Popover, StatusMessage } from './ui';
 import { formatLabel, resolutionLabel } from './mediaLabels';
 import { PlaybackQueue } from './PlaybackQueue';
 import { changeAutoplay, useAutoplay } from './autoplay';
+import { useResume } from './resume';
 import { usePlaybackDiagnostics } from './usePlaybackDiagnostics';
 import { usePreparationTrace, preparationLabels, type BackendPreparation } from './usePreparationTrace';
 import { preference, savePreference, loadSubtitlePreference as fetchSubtitlePreference } from './preferences';
@@ -77,8 +78,20 @@ export function Player({ media, automatic=false, close, playNext, queue, update,
   const [isDraggingVideo, setIsDraggingVideo] = useState(false);
   const dragSession = useRef<DragSession | null>(null);
   const suppressStageClick = useRef(false);
-  const [request, setRequest] = useState<Request | null>(() =>
-    !automatic && media.progress > 0 && !media.watched ? null : { start: !media.watched?media.progress:0, force_transcode: false, prefer_original: true, quality: 'auto', key: 0 });
+  const {mode:resumeMode}=useResume();
+  // Resolve the start position once per mounted video. Reading the preference
+  // here (not in an effect) keeps the first request correct, so a "restart"
+  // policy never briefly resumes and then seeks back to zero.
+  const [request, setRequest] = useState<Request | null>(() => {
+    // Automatic playback (next episode / playlist) always honours saved progress
+    // unless the user explicitly asked for restart.
+    if (automatic) return { start: resumeMode === 'restart' ? 0 : media.progress, force_transcode: false, prefer_original: true, quality: 'auto', key: 0 };
+    // Nothing meaningful to decide: no progress, or already watched.
+    if (media.progress <= 0 || media.watched) return { start: 0, force_transcode: false, prefer_original: true, quality: 'auto', key: 0 };
+    if (resumeMode === 'restart') return { start: 0, force_transcode: false, prefer_original: true, quality: 'auto', key: 0 };
+    if (resumeMode === 'resume') return { start: media.progress, force_transcode: false, prefer_original: true, quality: 'auto', key: 0 };
+    return null; // 'ask' -> the choice prompt below.
+  });
   const [phase, setPhase] = useState<'choice' | 'preparing' | 'ready' | 'error' | 'ended'>(request ? 'preparing' : 'choice');
   const [error, setError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -1091,8 +1104,12 @@ export function Player({ media, automatic=false, close, playNext, queue, update,
       </video>
       <style>{`.video-wrap video::cue { font-size: ${subtitleAppearance.size}px; color: ${subtitleAppearance.color}; background-color: rgba(0,0,0,${subtitleAppearance.background}); text-shadow: 0 1px 3px #000, 1px 0 3px #000, -1px 0 3px #000; }`}</style>
       </div>
-      {phase === 'choice' && <div className="resume"><b>继续上次观看？</b><span>上次看到 {duration(media.progress)}</span>
-        <button onClick={() => startAt(media.progress, false, 'auto', undefined, true)}>继续播放</button><button className="ghost" onClick={() => startAt(0, false, 'auto', undefined, true)}>从头开始</button></div>}
+      {phase === 'choice' && <div className="resume" role="dialog" aria-label="选择起播位置"><b>继续上次观看？</b><span>上次看到 {duration(media.progress)}</span>
+        <div className="resume-actions">
+          <button onClick={() => startAt(media.progress, false, 'auto', undefined, true)}>继续播放</button>
+          <button className="ghost" onClick={() => startAt(0, false, 'auto', undefined, true)}>从头开始</button>
+        </div>
+        <small>可在“设置 → 播放偏好 → 续播方式”中改为始终从头或始终接续，不再询问。</small></div>}
       {phase === 'preparing' && <div className="resume" role="status"><b>正在准备播放…</b><span>兼容视频直接播放，其他格式按需封装或转换</span></div>}
       {phase === 'ready' && buffering && <div className="buffering" role="status"><i />正在缓冲…</div>}
       {phase === 'error' && <div className="resume" role="alert"><b>暂时无法播放</b><span>{error}</span><button onClick={() => startAt(positionRef.current)}>重试播放</button></div>}

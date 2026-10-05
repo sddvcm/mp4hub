@@ -15,6 +15,7 @@
 .desktop-titlebar>.window-pin[aria-pressed="true"] {color:var(--ui-accent);background:color-mix(in srgb,var(--ui-accent) 12%,var(--ui-bg))}
 .desktop-titlebar>.window-pin[aria-pressed="true"]:hover {background:color-mix(in srgb,var(--ui-accent) 20%,var(--ui-bg))}
 .desktop-titlebar>button:focus-visible {outline:2px solid var(--ui-accent);outline-offset:-3px}
+.desktop-titlebar>.window-about:hover {color:var(--ui-accent)}
 .desktop-titlebar>.window-close:hover {background:#c53c4e;color:#fff}
 .desktop-titlebar small {font-size:11px;color:var(--ui-danger)}
 .pure-playback body {padding-top:0;overflow:hidden}

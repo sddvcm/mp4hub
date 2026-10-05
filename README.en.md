@@ -1,8 +1,8 @@
-# AVHub
+# MP4Hub
 
 English · [简体中文](README.md)
 
-AVHub is an offline local video library and player for Windows. It brings multiple video directories into one interface, lets you browse by folder or by movie and series, and remembers favorites, playlists, and viewing progress.
+MP4Hub is an offline local video library and player for Windows. It brings multiple video directories into one interface, lets you browse by folder or by movie and series, and remembers favorites, playlists, and viewing progress.
 
 Videos stay in their original locations. The app does not offer operations to move, rename, or delete source videos. Indexes, artwork, settings, and viewing records are stored separately. Once dependencies are installed or a portable build is ready, everyday scanning and playback work offline, without online artwork or metadata scraping.
 
@@ -13,16 +13,38 @@ Two runtime modes are available:
 
 **The application UI is currently Chinese.** This English README does not imply English UI support. The repository primarily contains source code, not FFmpeg executables, generated web assets, personal library data, or portable EXEs.
 
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [Usage guide (USAGE.md, Chinese)](USAGE.md) | Complete onboarding and day-to-day guide for end users |
+| [Changelog (CHANGELOG.md, Chinese)](CHANGELOG.md) | Feature changes and upgrade notes per version |
+| [docs/](docs/) | Per-iteration development, analysis, and verification records |
+| [README.md](README.md) | Chinese README |
+
+## Download
+
+End users should grab the portable build directly — no Python, Node.js, or FFmpeg installation required:
+
+**➡️ [Releases](https://github.com/sddvcm/mp4hub/releases)** — download `MP4Hub-portable-<version>-x64.exe`
+
+Place it in a writable directory and double-click to launch. Library data is stored in `AVHub-data/` next to the EXE; copy that directory along with the EXE to migrate. See the [usage guide](USAGE.md) for first-run steps (in Chinese).
+
 ## Features
 
 ### Library
 
-- Multiple local directories, added through a native folder picker or a typed path; per-directory scans, incremental library refresh, and interrupted-scan recovery.
-- Grid, list, and folder browsing; all videos, movies, series, continue watching, favorites, history, and playlists.
+- Multiple local directories, added through a native folder picker or a typed path; the picker **reopens where you last chose a folder** instead of starting over. Per-directory scans, incremental library refresh, and interrupted-scan recovery.
+- **The desktop shell owns the folder picker**: the Electron build (including the portable EXE) opens the native directory dialog in the main process and hands the confirmed path to the local service, so packaged builds never depend on Python's tkinter. The browser build falls back to the server-side tkinter dialog; when the runtime ships without tkinter, enter the full path directly in Settings.
+- Grid, list, and folder browsing; all videos, movies, series, continue watching, favorites, history, and playlists. Cover cards show `format · resolution · size` (for example `MP4 · 1080p · 1.2 GB`); when the index has no size only the first two segments appear, so no bogus "0.0 KB".
 - Search titles, filenames, and tags; filter and sort by directory, format, duration, and watched status.
+- **Sort orders**: beyond most-recently-watched / added and name, sort by duration, **by resolution** (width × height pixel count), or **by file size**, ascending or descending. Items with unknown resolution or size are consistently pushed to the end of the list.
 - Infer series, seasons, and episodes from local names and folders; manually edit titles, types, episode numbers, tags, and ratings.
 - Generate artwork from video frames, import custom artwork, capture a cover at a chosen video position, and batch-edit metadata.
 - Server-side pagination and on-demand directory / series data. An independent thumbnail queue supports pause and resume and yields to playback.
+- **Directory-tree view**: on by default, so the media-directory tree is already visible on the left; the "Directory structure" toolbar button collapses or restores it, and that choice is remembered. Clicking a directory narrows the list to it, and "All" at the top restores the full list. **Multi-level nesting** is supported: each added media directory becomes a top-level node, and its subdirectories nest to their actual depth (for example 电影 → 国语 → 2005 / 2006).
+- **Batch actions**: the History, Continue watching, and Favorites views offer bulk editing — favorite, unfavorite, mark watched / unwatched, reset progress, or clear history for many rows at once.
+- **All actions**: shown permanently in the toolbar, **inline immediately to the right of the batch-action button on the same row** — they never wrap onto a line of their own. No need to enter batch mode or tick any row, applied to every video in the current view — or within the selected media directory when one is chosen. Hovering a button shows an "action · scope" hint. Each view offers only what reads naturally there: **Continue watching** and **History** offer clear-all-history only, **Favorites** offers unfavorite-all only, **Movies** and **Series** offer all four, and **All videos** shows nothing (browsing does not do bulk cleanup). Unfavorite-all and clear-history ask for confirmation first.
 - Relocate unavailable directories while retaining associated user metadata. Removing a library directory does not delete its videos.
 
 ### Player
@@ -40,6 +62,7 @@ Two runtime modes are available:
 - SQLite persistence for indexes, favorites, tags, playlists, progress, and preferences.
 - Database backup and full-library backup / restore, including custom artwork and optionally thumbnails.
 - Storage previews and cache cleanup, scan and artwork task status, playback diagnostics, and desktop logs.
+- **About**: in the desktop build, an entry sits at the top-left of the window titlebar, just before the always-on-top button. It shows the version, build ID, and API protocol, plus a direct link and copy button for the project home page `https://github.com/sddvcm/mp4hub`.
 - Loopback-only service and request validation; the desktop app adds session validation and restricted native operations.
 
 ## Use an existing portable build
@@ -66,8 +89,8 @@ Run the following commands in PowerShell from the project root. Initial dependen
 If you do not already have the source:
 
 ```powershell
-git clone https://github.com/jhlxlml/avhub.git
-cd avhub
+git clone https://github.com/sddvcm/mp4hub.git
+cd mp4hub
 ```
 
 The app prefers `bin/ffmpeg.exe` and `bin/ffprobe.exe`, falling back to PATH. A build used for compatibility transcoding should support H.264 / AAC; HDR tone mapping also requires the relevant `zscale` / `tonemap` filters.
@@ -111,7 +134,7 @@ npm run build
 python run.py
 ```
 
-The default URL is `http://127.0.0.1:8765`. Startup opens the system's default browser. After installing dependencies and building the UI, you can also double-click [启动AVHub.bat](启动AVHub.bat). That launcher starts browser mode only; it does not install dependencies or build assets.
+The default URL is `http://127.0.0.1:8765`. Startup opens the system's default browser. After installing dependencies and building the UI, you can also double-click [启动MP4Hub.bat](启动MP4Hub.bat). That launcher starts browser mode only; it does not install dependencies or build assets.
 
 Use `python run.py --no-browser` to skip opening a browser, or `python run.py --port 8870` if the default port is occupied.
 
@@ -151,7 +174,7 @@ Compatibility determines the playback path:
 
 Keeping 4K resolution does not mean lossless output. Compatibility transcoding is lossy. HDR / high-bit-depth conversion may produce SDR / 8-bit output and cannot retain all original dynamic range or bit depth. Unsupported Dolby Vision conversions are explicitly rejected rather than labeled as original-quality playback.
 
-HEVC direct playback depends on browser, OS, and hardware support. Random seeking in MKV / TS may still require preparation when remuxing or transcoding. AVHub does not integrate MPV or another native playback engine, so native-player decoding and seeking performance cannot be guaranteed for every file.
+HEVC direct playback depends on browser, OS, and hardware support. Random seeking in MKV / TS may still require preparation when remuxing or transcoding. MP4Hub does not integrate MPV or another native playback engine, so native-player decoding and seeking performance cannot be guaranteed for every file.
 
 Embedded text subtitles and external SRT / VTT / ASS / SSA are supported. ASS / SSA is converted to WebVTT, without guaranteed preservation of complex styling or effects. Image-based subtitles such as PGS / VobSub are not currently supported.
 
@@ -204,7 +227,7 @@ The data directory contains `library.db`, thumbnails, custom artwork, and playba
 For example, run browser mode with a dedicated data directory:
 
 ```powershell
-$env:AVHUB_DATA_DIR = 'D:\AVHubData'
+$env:AVHUB_DATA_DIR = 'D:\MP4HubData'
 python run.py
 ```
 
@@ -266,7 +289,7 @@ The script installs runtime and build dependencies, builds the web UI and Electr
 Output:
 
 ```text
-dist/electron/AVHub-portable-<version>-x64.exe
+dist/electron/MP4Hub-portable-<version>-x64.exe
 ```
 
 The current `package.json` version is `0.2.0`. Existing EXEs do not load updated workspace source; rebuild the package to update the distributed app.
@@ -276,7 +299,7 @@ If `pwsh` is not recognized, install PowerShell 7 and reopen the terminal. Windo
 ## Project layout
 
 ```text
-avhub/
+mp4hub/
 ├─ frontend/src/          React + TypeScript UI and player
 ├─ electron/src/          Desktop window, backend lifecycle, native bridge
 ├─ electron/assets/       App icons

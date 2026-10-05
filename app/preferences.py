@@ -3,17 +3,19 @@ import math
 import re
 from fastapi import HTTPException
 
-GLOBAL_KEYS = {'audio','playbackSpeed','subtitleAppearance','hoverPreview','queueOpen','autoNext','queueMode','queueScope','screenshots','appearance'}
+GLOBAL_KEYS = {'audio','playbackSpeed','subtitleAppearance','hoverPreview','queueOpen','autoNext','queueMode','queueScope','resumeMode','libraryDirectories','screenshots','appearance'}
 
 
 def validate(key, value):
     valid = False
-    if key in {'hoverPreview','queueOpen','autoNext'}:
+    if key in {'hoverPreview','queueOpen','autoNext','libraryDirectories'}:
         valid = isinstance(value,bool)
     elif key == 'queueMode':
         valid = value in ('sequential','random','repeat-one')
     elif key == 'queueScope':
         valid = value in ('series','directory')
+    elif key == 'resumeMode':
+        valid = value in ('resume','restart','ask')
     elif key == 'appearance' and isinstance(value,dict):
         valid = (set(value)=={'theme','coverSize'} and value.get('theme') in ('dark','light')
                  and value.get('coverSize') in ('compact','standard','comfortable','large'))

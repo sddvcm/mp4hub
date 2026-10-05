@@ -20,7 +20,7 @@ export function MediaActions({media,update,changed,notify}: {
   },[open]);
   async function act(action:'watched'|'auto'|'copy'|'reveal'|'open') {
     if(lock.current)return;
-    if(action==='open' && !window.confirm('将用系统默认播放器打开原视频。AVHub 无法同步外部播放器的进度、音轨和字幕。继续？'))return;
+    if(action==='open' && !window.confirm('将用系统默认播放器打开原视频。MP4Hub 无法同步外部播放器的进度、音轨和字幕。继续？'))return;
     lock.current=true;setBusy(true);
     try {
       if(action==='watched'||action==='auto') {

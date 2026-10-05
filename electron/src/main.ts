@@ -4,6 +4,7 @@ import { loadDesktopIcon } from './appIcon';
 import { permissionAllowed } from './permissionPolicy';
 import { stopOwnedBackend } from './backendShutdown';
 import { appendBoundedLog } from './desktopLogs';
+import { readLastPicked, rememberPicked } from './desktopState';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -179,25 +180,58 @@ ipcMain.handle('avhub:screenshot-action',async(event,id:unknown,action:unknown)=
   return {ok:true};
 });
 
+// Native folder picker for 添加媒体目录 / 重新定位 / 截图目录。
+// The frozen Python backend has no tkinter, so the desktop build must use Electron's
+// own dialog. The renderer only sends a purpose tag; the chosen path is validated here
+// and never trusted from the renderer directly.
+const PICK_PURPOSES = ['video', 'screenshot'] as const;
+ipcMain.handle('avhub:pick-directory', async (event, purpose: unknown) => {
+  const window = trustedWindow(event);
+  const kind = PICK_PURPOSES.find(value => value === purpose);
+  if (!kind) throw new Error('目录选择参数无效');
+  const options: Electron.OpenDialogOptions = {
+    title: kind === 'video' ? '选择要加入 MP4Hub 的视频文件夹' : '选择截图默认保存目录',
+    properties: ['openDirectory', 'createDirectory'],
+  };
+  // Reopen where the user last picked instead of starting from the filesystem root.
+  const previous = readLastPicked(dataDir, kind);
+  if (previous) options.defaultPath = previous;
+  const result = await dialog.showOpenDialog(window, options);
+  if (result.canceled || result.filePaths.length === 0) return { cancelled: true } as const;
+  const selected = await realpath(result.filePaths[0]);
+  if (!(await stat(selected)).isDirectory()) throw new Error('所选路径不是文件夹');
+  rememberPicked(dataDir, kind, selected);
+  return { path: selected } as const;
+});
+
+function portableBase(): string {
+  // Packaged: the executable's own folder. Source checkout: the project root.
+  return (isPackaged && process.env.PORTABLE_EXECUTABLE_DIR) || path.dirname(app.getPath('exe'));
+}
+
+function writableDirectory(target: string): boolean {
+  try {
+    mkdirSync(target, { recursive: true });
+    const probe = path.join(target, '.write-check');
+    writeFileSync(probe, 'ok');
+    rmSync(probe, { force: true });
+    return true;
+  } catch {
+    // Some USB drives and protected program folders are read-only.
+    return false;
+  }
+}
+
 function chooseDataDirectory(): string {
   if (process.env.AVHUB_DATA_DIR) {
     const configured = path.resolve(process.env.AVHUB_DATA_DIR);
     mkdirSync(configured, { recursive: true });
     return configured;
   }
-  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
-  if (isPackaged && portableDir) {
-    const portable = path.join(portableDir, 'AVHub-data');
-    try {
-      mkdirSync(portable, { recursive: true });
-      const probe = path.join(portable, '.write-check');
-      writeFileSync(probe, 'ok');
-      rmSync(probe, { force: true });
-      return portable;
-    } catch {
-      // Some USB drives and protected program folders are read-only; use the user profile instead.
-    }
-  }
+  // Default: keep the library next to the program so the whole folder can be
+  // copied to another machine or USB drive and keep its index and progress.
+  const preferred = path.join(portableBase(), isPackaged ? 'AVHub-data' : 'data');
+  if (writableDirectory(preferred)) return preferred;
   const fallback = path.join(app.getPath('userData'), 'data');
   mkdirSync(fallback, { recursive: true });
   return fallback;
@@ -291,7 +325,9 @@ function createWindow(): BrowserWindow {
     // Frameless from creation: changing the OS frame by recreating a window
     // would destroy the active decoder. Keep native edge resizing (thickFrame).
     frame: false,
-    backgroundColor: '#0b0f16',
+    // Matches the light theme background so the first frame does not flash dark
+    // before the renderer applies data-theme.
+    backgroundColor: '#f4f6fa',
     autoHideMenuBar: true,
     webPreferences: {
       backgroundThrottling: isPackaged || process.env.AVHUB_HEADLESS_TEST !== '1',
@@ -381,7 +417,7 @@ async function startApplication() {
   backend.on('exit', code => {
     backendExitCode = code;
     if (applicationStarted && !shuttingDown && !allowQuit) {
-      dialog.showErrorBox('AVHub 媒体服务已停止', `AVHub 的本地服务意外退出（${code ?? '未知'}）。\n\n日志文件：${path.join(dataDir, 'backend.log')}`);
+      dialog.showErrorBox('MP4Hub 媒体服务已停止', `MP4Hub 的本地服务意外退出（${code ?? '未知'}）。\n\n日志文件：${path.join(dataDir, 'backend.log')}`);
       allowQuit = true;
       app.quit();
     }
@@ -469,7 +505,7 @@ app.whenReady().then(async () => {
   await startApplication();
 }).catch(error => {
   appendDesktopLog(`startup-error ${error instanceof Error ? error.message : String(error)}`);
-  dialog.showErrorBox('AVHub 启动失败', error instanceof Error ? error.message : String(error));
+  dialog.showErrorBox('MP4Hub 启动失败', error instanceof Error ? error.message : String(error));
   allowQuit = true;
   app.quit();
 });

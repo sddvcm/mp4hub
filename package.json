@@ -25,7 +25,10 @@
     "test:electron:permissions": "npm run build:electron && node electron/test/permission-policy.mjs",
     "test:electron:logs": "npm run build:electron && node electron/test/logs.mjs",
     "test:electron:data-commit": "npm run build && npm run build:electron && node electron/test/data-commit.mjs",
-    "test:electron:shutdown": "npm run build && npm run build:electron && node electron/test/shutdown-policy.mjs && node electron/test/shutdown.mjs"
+    "test:electron:shutdown": "npm run build && npm run build:electron && node electron/test/shutdown-policy.mjs && node electron/test/shutdown.mjs",
+    "test:frontend": "node scripts/test-view-actions.mjs",
+    "test:electron:desktop-state": "npm run build:electron && node electron/test/desktop-state.mjs",
+    "test:unit": "npm run test:frontend && npm run test:electron:desktop-state"
   },
   "dependencies": {},
   "devDependencies": {
@@ -44,22 +47,42 @@
   },
   "build": {
     "appId": "local.avhub.desktop",
-    "productName": "AVHub",
-    "directories": { "output": "dist/electron" },
-    "files": ["electron/dist/**/*", "package.json", "app/build-info.json"],
-    "extraResources": [{
-      "from": "build/backend-dist/AVHubServer",
-      "to": "backend",
-      "filter": ["**/*"]
-    }, {
-      "from": "electron/assets",
-      "to": "icons",
-      "filter": ["avhub.png"]
-    }],
+    "productName": "MP4Hub",
+    "directories": {
+      "output": "dist/electron"
+    },
+    "files": [
+      "electron/dist/**/*",
+      "package.json",
+      "app/build-info.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend-dist/AVHubServer",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "electron/assets",
+        "to": "icons",
+        "filter": [
+          "avhub.png"
+        ]
+      }
+    ],
     "win": {
       "icon": "electron/assets/avhub.ico",
-      "target": [{ "target": "portable", "arch": ["x64"] }],
-      "artifactName": "AVHub-portable-${version}-${arch}.${ext}"
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "MP4Hub-portable-${version}-${arch}.${ext}"
     }
   }
 }

@@ -4,7 +4,7 @@ export type PlaybackColor = { source:VideoColor; label:string; warning:string };
 export type ExternalSubtitle = { name: string; path: string };
 export type Media = {
   id: number; name: string; title: string; kind: string; season?: number; episode?: number;
-  ext: string; duration: number; width?: number; height?: number; video_codec?: string;
+  ext: string; duration: number; width?: number; height?: number; size?: number; video_codec?: string;
   thumbnail_url?: string; favorite: boolean | number; progress: number; watched: boolean | number;
   missing?: boolean | number;
   manual_watched?:number|null;
@@ -16,6 +16,9 @@ export type Media = {
 export type Root = { id: number; path: string; available: boolean | null; relocated?: number };
 export type MediaPage = { items: Media[]; total: number; page: number; page_size: number; pages: number };
 export type FolderPage = { folder: string; items: { name: string; folder: string; count: number }[]; total: number; video_count: number; direct_count: number; page: number; pages: number };
+export type FolderTreeEntry = { root_id: number; name: string; folder: string; depth: number; count: number; direct_count: number };
+export type FolderTreeRoot = { id: number; name: string; path: string; count: number; direct_count: number };
+export type FolderTree = { total: number; roots: FolderTreeRoot[]; folders: FolderTreeEntry[] };
 export type SiblingPage = MediaPage & { index: number; previous: Media | null; next: Media | null };
 export type Playlist = { id: number; name: string; count: number };
 export type PlaylistDetail = Playlist & { items: Media[]; created_at: number };
@@ -28,7 +31,7 @@ export const views: { id: View; label: string }[] = [
   { id: 'all', label: '全部视频' }, { id: 'movies', label: '电影' }, { id: 'series', label: '剧集' },
   { id: 'continue', label: '继续观看' }, { id: 'favorites', label: '收藏' }, { id: 'history', label: '观看历史' },
 ];
-export const SERVICE_MISMATCH = '本地服务与网页版本不匹配，请完全退出并重新启动 AVHub';
+export const SERVICE_MISMATCH = '本地服务与网页版本不匹配，请完全退出并重新启动 MP4Hub';
 export const CLIENT_BUILD = __AVHUB_BUILD__;
 export async function checkServiceBuild() {
   const health = await api<{ api_protocol?:number; build_id?:string }>('/api/health');
@@ -43,7 +46,7 @@ export async function readJson<T>(response: Response): Promise<T> {
     throw new Error(SERVICE_MISMATCH);
   }
   try { return JSON.parse(body) as T; }
-  catch { throw new Error('本地服务返回了无法识别的数据，请完全退出并重新启动 AVHub'); }
+  catch { throw new Error('本地服务返回了无法识别的数据，请完全退出并重新启动 MP4Hub'); }
 }
 export type ApiOptions = RequestInit & { timeoutMs?: number };
 export function requestDeadline(url: string, options?: ApiOptions): number {
@@ -68,7 +71,7 @@ export async function request<T>(url: string, options: ApiOptions | undefined, c
   catch (error) {
     if (options?.signal?.aborted) throw error;
     if (timedOut) throw new Error(`本地服务响应超时${init.method && init.method !== 'GET' ? '，操作可能已提交，请刷新确认后再重试' : '，请稍后重试或查看运行诊断'}`);
-    if (error instanceof TypeError) throw new Error('无法连接本地服务，请确认 AVHub 正在运行后重试');
+    if (error instanceof TypeError) throw new Error('无法连接本地服务，请确认 MP4Hub 正在运行后重试');
     throw error;
   } finally {
     if (timer !== undefined) globalThis.clearTimeout(timer);

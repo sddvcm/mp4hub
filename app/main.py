@@ -57,22 +57,36 @@ ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
 APP_HOME = Path(sys.executable).resolve().parent if FROZEN else ROOT
 
 
+def _writable(target: Path) -> bool:
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / ".write-check"
+        probe.touch(exist_ok=True)
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
 def data_directory() -> Path:
     override = os.environ.get("AVHUB_DATA_DIR")
     if override:
         return Path(override).expanduser().resolve()
-    if FROZEN:
-        portable = APP_HOME / "data"
-        try:
-            portable.mkdir(parents=True, exist_ok=True)
-            probe_file = portable / ".write-check"
-            probe_file.touch(exist_ok=True)
-            probe_file.unlink(missing_ok=True)
-            return portable
-        except OSError:
-            local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-            return (local / "AVHub" / "data").resolve()
-    return ROOT / "data"
+    # Default: keep the library beside the program (portable EXE folder, or the
+    # source checkout root) so it can be copied together with the application.
+    preferred = APP_HOME / ("AVHub-data" if FROZEN else "data")
+    if _writable(preferred):
+        return preferred.resolve()
+    local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    return (local / "AVHub" / "data").resolve()
+
+
+def data_directory_source() -> str:
+    """Reported in settings so the user can tell a portable folder from a fallback."""
+    if os.environ.get("AVHUB_DATA_DIR"):
+        return "env"
+    preferred = APP_HOME / ("AVHub-data" if FROZEN else "data")
+    return "portable" if DATA == preferred.resolve() else "fallback"
 
 
 DATA = data_directory()
@@ -578,6 +592,13 @@ async def desktop_response(request: Request, call_next):
 
 class RootInput(BaseModel): path: str
 class RelocateInput(BaseModel): path: str
+class PickInput(BaseModel):
+    """Desktop builds pass the path returned by Electron's native folder dialog.
+
+    The frozen backend ships without tkinter, so the renderer asks Electron for the
+    folder and forwards the result here. Browser builds omit it and fall back to tkinter.
+    """
+    path: str | None = None
 class ProgressInput(BaseModel):
     progress: float = Field(ge=0, allow_inf_nan=False)
     watched: bool = False
@@ -683,7 +704,10 @@ def save_screenshot_settings(body:ScreenshotSettingsInput):
     return screenshot_settings()
 
 @app.post('/api/screenshots/pick')
-def pick_screenshot_directory():
+def pick_screenshot_directory(body: PickInput | None = None):
+    supplied = body.path if body else None
+    if supplied:
+        return {'directory': str(Path(supplied).expanduser().resolve())}
     window=None
     try:
         import tkinter as tk
@@ -718,6 +742,26 @@ def health():
             "data_dir": str(DATA), "frozen": FROZEN, "port": SERVER_PORT, **BUILD,
             "desktop_session": bool(SESSION_TOKEN),
             "session_id": hashlib.sha256(SESSION_TOKEN.encode()).hexdigest()[:16] if SESSION_TOKEN else None}
+
+
+@app.get('/api/data-location')
+def data_location():
+    return {'data_dir': str(DATA), 'app_home': str(APP_HOME), 'portable': FROZEN,
+            'writable': os.access(DATA, os.W_OK), 'source': data_directory_source()}
+
+
+@app.post('/api/data-location/reveal')
+def reveal_data_location(request: Request):
+    # Only a same-origin UI request may hand this directory to the OS shell.
+    if request.url.hostname not in {'127.0.0.1','localhost'} or request.headers.get('origin')!=str(request.base_url).rstrip('/'):
+        raise HTTPException(403,'仅允许本机应用发起文件操作')
+    if sys.platform!='win32':
+        if sys.platform=='darwin': subprocess.Popen(['open',str(DATA)])
+        else: subprocess.Popen(['xdg-open',str(DATA)])
+        return {'ok':True}
+    try: os.startfile(str(DATA))
+    except OSError as exc: raise HTTPException(503,'无法打开数据目录，请检查磁盘或权限') from exc
+    return {'ok':True}
 
 
 @app.get('/api/diagnostics')
@@ -768,15 +812,27 @@ def add_root(body: RootInput):
     return dict(row)
 
 @app.post("/api/roots/pick", status_code=201)
-def pick_root():
-    """Open Windows' native folder picker and immediately add the chosen folder."""
+def pick_root(body: PickInput | None = None):
+    """Add the folder chosen by the native picker.
+
+    The desktop build is driven by Electron's folder dialog (see avhub:pick-directory);
+    that path arrives in the body. Without a body this falls back to tkinter, which is
+    only available when running the source/browser build with a tk-enabled Python.
+    """
+    supplied = body.path if body else None
+    if supplied:
+        return add_root(RootInput(path=supplied))
     try:
         import tkinter as tk
         from tkinter import filedialog
         window = tk.Tk()
         window.withdraw()
         window.attributes("-topmost", True)
-        selected = filedialog.askdirectory(title="选择要加入 AVHub 的视频文件夹", mustexist=True)
+        # Start at the most recently added media directory instead of the drive root.
+        with connection() as db:
+            recent = db.execute("SELECT path FROM roots ORDER BY added_at DESC, id DESC LIMIT 1").fetchone()
+        initial = recent["path"] if recent and Path(recent["path"]).is_dir() else None
+        selected = filedialog.askdirectory(title="选择要加入 MP4Hub 的视频文件夹", mustexist=True, initialdir=initial)
         window.destroy()
     except Exception as exc:
         raise HTTPException(500, f"无法打开系统文件夹选择器：{exc}") from exc
@@ -826,10 +882,13 @@ def relocate_root(root_id: int, body: RelocateInput):
 
 
 @app.post("/api/roots/{root_id}/relocate/pick")
-def pick_relocation(root_id: int):
+def pick_relocation(root_id: int, body: PickInput | None = None):
     with connection() as db:
         if not db.execute("SELECT 1 FROM roots WHERE id=?", (root_id,)).fetchone():
             raise HTTPException(404, "媒体目录不存在")
+    supplied = body.path if body else None
+    if supplied:
+        return relocate_root(root_id, RelocateInput(path=supplied))
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -1216,7 +1275,8 @@ def media(q: str = "", view: str = "all", favorite: bool = False, unwatched: boo
           duration_band: Literal['short','medium','long'] | None = None,
           root_id: int | None = None, folder: str = '', recursive: bool = True, limit: int = Query(300, ge=1, le=1000),
           page: int | None = Query(None, ge=1), page_size: int = Query(48, ge=1, le=120),
-          sort: Literal['recent','added','name','duration_desc','duration_asc'] = 'recent'):
+          sort: Literal['recent','added','name','duration_desc','duration_asc',
+                        'resolution_desc','resolution_asc','size_desc','size_asc'] = 'recent'):
     sql = "SELECT * FROM media WHERE missing=0"; args: list[Any] = []
     if q:
         literal_query = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -1251,6 +1311,14 @@ def media(q: str = "", view: str = "all", favorite: bool = False, unwatched: boo
         'added': 'created_at DESC,id DESC', 'name': 'title COLLATE NOCASE ASC,id ASC',
         'duration_desc': '(duration IS NULL OR duration<=0),duration DESC,id ASC',
         'duration_asc': '(duration IS NULL OR duration<=0),duration ASC,id ASC',
+        # Pixel count rather than width alone, so 1920x800 sorts below 1280x1024.
+        # Rows without probe data lead with a 1 in the first key and sink to the end.
+        'resolution_desc': '(width IS NULL OR height IS NULL OR width<=0 OR height<=0),'
+                           '(width*height) DESC,id ASC',
+        'resolution_asc': '(width IS NULL OR height IS NULL OR width<=0 OR height<=0),'
+                          '(width*height) ASC,id ASC',
+        'size_desc': '(size IS NULL OR size<=0),size DESC,id ASC',
+        'size_asc': '(size IS NULL OR size<=0),size ASC,id ASC',
     }[sort]
     # Keep the legacy list endpoint compatible; new clients always supply page.
     if not isinstance(page, int):
@@ -1303,6 +1371,71 @@ def media_folders(root_id: int, folder: str = '', q: str = '', page: int = Query
                                            'count': row['count']} for row in rows],
                 'total': total, 'video_count': counts['total'], 'direct_count': counts['direct'],
                 'page': page, 'pages': max(1, (total + page_size-1)//page_size)}
+
+
+@app.get('/api/folders/tree')
+def folder_tree(root_id: int | None = None):
+    """Full indexed folder hierarchy with per-folder video counts.
+
+    Returns the whole tree in one request so the sidebar can render and expand
+    levels without a round trip. Counts include descendants, matching the media
+    query used when a folder is selected. No disk access happens here.
+    """
+    with read_connection() as db:
+        roots = [dict(row) for row in db.execute('SELECT id,path FROM roots ORDER BY path')]
+        if root_id is not None and not any(root['id'] == root_id for root in roots):
+            raise HTTPException(404, '媒体目录不存在')
+        sql = 'SELECT root_id,path FROM media WHERE missing=0'
+        args: list[Any] = []
+        if root_id is not None:
+            sql += ' AND root_id=?'; args.append(root_id)
+        rows = db.execute(sql, args).fetchall()
+
+    totals: dict[int, int] = {}        # root -> every descendant file
+    direct: dict[tuple[int, str], int] = {}   # (root, folder) -> files directly inside
+    folder_totals: dict[tuple[int, str], int] = {}  # (root, folder) -> files in subtree
+    # Match by longest root prefix rather than trusting media.root_id alone: an
+    # unindexed/legacy row without root_id still belongs under a known root, and
+    # sorting once keeps this deterministic for overlapping root paths.
+    ordered = sorted(roots, key=lambda root: len(root['path']), reverse=True)
+    for row in rows:
+        source = os.path.normcase(str(row['path']))
+        match = next((root for root in ordered
+                      if source == os.path.normcase(root['path'])
+                      or source.startswith(os.path.normcase(root['path']).rstrip('\\/') + os.sep)
+                      or source.startswith(os.path.normcase(root['path']).rstrip('/') + '/')), None)
+        if match is None:
+            continue
+        try:
+            parts = Path(row['path']).relative_to(match['path']).parts
+        except ValueError:
+            continue
+        key_root = match['id']
+        totals[key_root] = totals.get(key_root, 0) + 1
+        folder = '/'.join(parts[:-1])
+        direct[(key_root, folder)] = direct.get((key_root, folder), 0) + 1
+        # Every ancestor of this file gains one descendant.
+        prefix = ''
+        folder_totals[(key_root, '')] = folder_totals.get((key_root, ''), 0) + 1
+        for part in parts[:-1]:
+            prefix = f'{prefix}/{part}' if prefix else part
+            folder_totals[(key_root, prefix)] = folder_totals.get((key_root, prefix), 0) + 1
+
+    # Emit every folder on the ancestor chain, not just those holding a file
+    # directly: a pure container such as 电影/国语 only has sub-folders, and the
+    # sidebar must still show it as its own level. folder_totals already carries
+    # each ancestor, so iterate that instead of `direct`.
+    folders = [{'root_id': key[0], 'folder': key[1], 'name': key[1].split('/')[-1],
+                'depth': key[1].count('/'),
+                'count': count, 'direct_count': direct.get(key, 0)}
+               for key, count in folder_totals.items() if key[1]]
+    # Parents before children, siblings by name, so the client can render in order.
+    folders.sort(key=lambda item: (item['root_id'], item['folder'].count('/'), item['folder'].casefold()))
+    return {'total': sum(totals.values()),
+            'roots': [{'id': root['id'], 'name': Path(root['path']).name or root['path'], 'path': root['path'],
+                       'count': totals.get(root['id'], 0), 'direct_count': direct.get((root['id'], ''), 0)}
+                      for root in roots],
+            'folders': folders}
 
 
 @app.get('/api/media/{media_id}/siblings')
@@ -1397,6 +1530,111 @@ def batch_media(body: BulkInput):
     with connection() as db:
         db.execute('BEGIN IMMEDIATE')
         return edit_metadata(db,body.media_ids,body.changes,body.add_tags,body.remove_tags,body.favorite,body.watched,merge_group=True)
+
+
+class BatchActionInput(BaseModel):
+    media_ids: list[int] = Field(min_length=1,max_length=500)
+    action: Literal['favorite','unfavorite','clear_history','mark_watched','mark_unwatched','reset_watched']
+
+
+class LibraryAllActionInput(BaseModel):
+    """Whole-view edit. No id list: the row set is derived from view + root_id."""
+    view: Literal['all','movies','series','continue','history','favorites']
+    action: Literal['favorite','unfavorite','clear_history','mark_watched','mark_unwatched','reset_watched']
+    root_id: int | None = None
+
+
+@app.post('/api/library/batch-action')
+def batch_action(body: BatchActionInput):
+    """Bulk edits shared by 观看历史 / 继续观看 / 收藏. Never touches source files."""
+    ids=list(dict.fromkeys(body.media_ids))
+    if any(i<=0 for i in ids):raise HTTPException(422,'视频编号无效')
+    marks=','.join('?' for _ in ids)
+    stamp=time.time()*1000
+    with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        found=db.execute(f'SELECT COUNT(*) FROM media WHERE id IN ({marks})',ids).fetchone()[0]
+        if found!=len(ids):raise HTTPException(404,'部分视频索引已不存在，未修改任何视频，请刷新后重选')
+        if body.action in ('favorite','unfavorite'):
+            value=int(body.action=='favorite')
+            db.execute(f'UPDATE media SET favorite=?,updated_at=? WHERE id IN ({marks})',[value,time.time(),*ids])
+            return {'updated':len(ids),'action':body.action,'favorite':bool(value)}
+        if body.action=='clear_history':
+            # Mirrors the single-item endpoint: progress resets, favorites and
+            # manual watch marks survive, and the row stays in the library.
+            db.execute(f'''UPDATE media SET progress=0,watched=COALESCE(manual_watched,0),
+                last_played=NULL,progress_updated_at=? WHERE id IN ({marks})''',[stamp,*ids])
+            return {'updated':len(ids),'action':body.action}
+        if body.action in ('mark_watched','mark_unwatched'):
+            value=int(body.action=='mark_watched')
+            db.execute(f'UPDATE media SET manual_watched=?,watched=?,progress_updated_at=? WHERE id IN ({marks})',[value,value,stamp,*ids])
+            return {'updated':len(ids),'action':body.action,'watched':bool(value)}
+        # reset_watched returns rows to the automatic ≥92% judgement.
+        db.execute(f'''UPDATE media SET manual_watched=NULL,
+            watched=CASE WHEN duration>0 AND progress>=duration*.92 THEN 1 ELSE 0 END,
+            progress_updated_at=? WHERE id IN ({marks})''',[stamp,*ids])
+        return {'updated':len(ids),'action':body.action}
+
+
+# Views whose contents a whole-library action can target. "all"/"movies"/"series"
+# are deliberately included: clearing history library-wide is a legitimate
+# cleanup, and every action below is reversible per item.
+LIBRARY_SCOPE_VIEWS = {'all', 'movies', 'series', 'continue', 'history', 'favorites'}
+
+
+def _library_scope_clause(view: str, root_id: int | None) -> tuple[str, list[Any]]:
+    """WHERE fragment selecting every row the given view currently lists.
+
+    Whole-library actions must mirror the list the user is looking at, otherwise
+    "全部清除观看记录" in 观看历史 would silently touch unrelated folders.
+    """
+    if view not in LIBRARY_SCOPE_VIEWS:
+        raise HTTPException(422, '该视图不支持全部操作')
+    sql = 'missing=0'
+    args: list[Any] = []
+    if view == 'movies': sql += " AND kind='movie'"
+    if view == 'series': sql += " AND kind='episode'"
+    if view == 'continue': sql += ' AND progress>0 AND watched=0'
+    if view == 'history': sql += ' AND last_played>0'
+    if view == 'favorites': sql += ' AND favorite=1'
+    if root_id is not None:
+        sql += ' AND root_id=?'; args.append(root_id)
+    # Removing a favorite from the 收藏 view is a no-op by definition.
+    return sql, args
+
+
+@app.post('/api/library/all-action')
+def library_all_action(body: 'LibraryAllActionInput'):
+    """Apply a bulk edit to every row in the current view, without selecting any.
+
+    Same semantics as /api/library/batch-action, but the row set comes from the
+    view plus optional media-directory scope instead of an explicit id list.
+    """
+    stamp = time.time() * 1000
+    where, args = _library_scope_clause(body.view, body.root_id)
+    with connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if body.action in ('favorite', 'unfavorite'):
+            value = int(body.action == 'favorite')
+            # 'unfavorite' inside 收藏 is equivalent to emptying the view; allow it
+            # because the client hides the button there anyway.
+            cursor = db.execute(f'UPDATE media SET favorite=?,updated_at=? WHERE {where}',
+                                [value, time.time(), *args])
+            return {'updated': cursor.rowcount, 'action': body.action, 'favorite': bool(value)}
+        if body.action == 'clear_history':
+            cursor = db.execute(f'''UPDATE media SET progress=0,watched=COALESCE(manual_watched,0),
+                last_played=NULL,progress_updated_at=? WHERE {where}''', [stamp, *args])
+            return {'updated': cursor.rowcount, 'action': body.action}
+        if body.action in ('mark_watched', 'mark_unwatched'):
+            value = int(body.action == 'mark_watched')
+            cursor = db.execute(f'UPDATE media SET manual_watched=?,watched=?,progress_updated_at=? WHERE {where}',
+                                [value, value, stamp, *args])
+            return {'updated': cursor.rowcount, 'action': body.action, 'watched': bool(value)}
+        # reset_watched returns rows to the automatic ≥92% judgement.
+        cursor = db.execute(f'''UPDATE media SET manual_watched=NULL,
+            watched=CASE WHEN duration>0 AND progress>=duration*.92 THEN 1 ELSE 0 END,
+            progress_updated_at=? WHERE {where}''', [stamp, *args])
+        return {'updated': cursor.rowcount, 'action': body.action}
 
 
 @app.get('/api/series')

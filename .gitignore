@@ -96,3 +96,6 @@ coverage.xml
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local sandbox delete-allow config (machine-specific absolute paths)
+.build-delete-allow.json

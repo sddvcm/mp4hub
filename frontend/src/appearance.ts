@@ -9,7 +9,9 @@ export const coverSizes = [
 ] as const;
 export type CoverSize = typeof coverSizes[number]['id'];
 export type Appearance = {theme:'dark'|'light';coverSize:CoverSize};
-const defaults:Appearance = {theme:'dark',coverSize:'standard'};
+// Light is the first-run default: the library is mostly white-on-white artwork
+// and a light shell reads better on fresh installs. Stored preferences win.
+const defaults:Appearance = {theme:'light',coverSize:'standard'};
 function validated(value:unknown):Appearance {
   if (!value || typeof value !== 'object') return defaults;
   const candidate=value as Partial<Appearance>;

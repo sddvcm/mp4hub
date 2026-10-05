@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 ipcRenderer.on('avhub:quit-cancelled', () => window.dispatchEvent(new Event('avhub-quit-cancelled')));
 
 contextBridge.exposeInMainWorld('avhubDesktop', {
+  pickDirectory:(purpose:'video'|'screenshot')=>ipcRenderer.invoke('avhub:pick-directory',purpose) as Promise<{path:string}|{cancelled:true}>,
   screenshotAction:(id:string|null,action:'reveal'|'folder')=>ipcRenderer.invoke('avhub:screenshot-action',id,action) as Promise<{ok:boolean}>,
   mediaAction:(mediaId:number,action:'reveal'|'open')=>ipcRenderer.invoke('avhub:media-action',mediaId,action) as Promise<{ok:boolean}>,
   getWindowState: () => ipcRenderer.invoke('avhub:window-state'),

@@ -39,7 +39,7 @@ if ($LASTEXITCODE -ne 0) { throw 'FastAPI 媒体服务打包失败。' }
 npm run package:windows
 if ($LASTEXITCODE -ne 0) { throw 'Electron Windows 便携包构建失败。' }
 
-$artifact = Get-ChildItem 'dist\electron\AVHub-portable-*.exe' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$artifact = Get-ChildItem 'dist\electron\MP4Hub-portable-*.exe' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $artifact) { throw '构建完成但未找到便携版 EXE。' }
-Write-Host "AVHub Electron 便携版已生成：$($artifact.FullName)"
+Write-Host "MP4Hub Electron 便携版已生成：$($artifact.FullName)"
 Write-Host '数据保存在 EXE 同目录的 AVHub-data；目录不可写时回退到当前 Windows 用户的数据目录。'

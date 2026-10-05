@@ -4,7 +4,7 @@ import { api, checkServiceBuild, json, duration, errorText, views, type View, ty
 import { Settings } from './Settings';
 import { Diagnostics } from './Diagnostics';
 import { Button, EmptyState, StatusMessage, Toast } from './ui';
-import { episodeLabel, formatLabel } from './mediaLabels';
+import { episodeLabel, formatLabel, mediaSizeLabel } from './mediaLabels';
 import { Playlists } from './Playlists';
 import { Pagination } from './Pagination';
 import { DirectoryFilter } from './DirectoryFilter';
@@ -21,13 +21,19 @@ import { resetPlaybackWindow } from './windowMode';
 import { MediaThumbnail } from './MediaThumbnail';
 import { BulkEditor } from './BulkEditor';
 import { SeriesLibrary } from './SeriesLibrary';
+import { DirectoryTree } from './DirectoryTree';
+import { BatchActions, type BatchAction } from './BatchActions';
+import { LibraryAllActions, libraryAllActions, type AllAction } from './LibraryAllActions';
 import { pageScrollTop, scrollPageTo } from './pageScroll';
 import { initializeAppearance } from './appearance';
 import { initializeAutoplay } from './autoplay';
+import { initializeResume } from './resume';
+import { initializeLibraryLayout, changeLibraryDirectories, useLibraryLayout } from './libraryLayout';
 import { CoverSizeControl, ThemeToggle } from './AppearanceControls';
 import { AutoScrollbars } from './AutoScrollbars';
 import './styles.css';
 import './library-performance.css';
+import './library-tools.css';
 import './design-system.css';
 import './appearance.css';
 import './scrollbars.css';
@@ -35,8 +41,19 @@ import './scrollbars.css';
 const Player = lazy(() => import('./Player').then(module => ({ default: module.Player })));
 
 const sorts = [{ id:'recent', label:'最近观看' }, { id:'added', label:'最近添加' }, { id:'name', label:'名称 A–Z' },
-  { id:'duration_desc', label:'时长从长到短' }, { id:'duration_asc', label:'时长从短到长' }];
+  { id:'duration_desc', label:'时长从长到短' }, { id:'duration_asc', label:'时长从短到长' },
+  { id:'resolution_desc', label:'分辨率从高到低' }, { id:'resolution_asc', label:'分辨率从低到高' },
+  { id:'size_desc', label:'文件从大到小' }, { id:'size_asc', label:'文件从小到大' }];
 const formats = ['mp4','mkv','avi','mov','m4v','webm','wmv','flv','ts','mts','m2ts'];
+const batchViews:View[] = ['history','continue','favorites'];
+const batchLabels:Record<BatchAction,string> = {
+  favorite:'已收藏', unfavorite:'已取消收藏', clear_history:'已清除观看记录',
+  mark_watched:'已标记为已看', mark_unwatched:'已标记为未看', reset_watched:'已恢复自动判断'};
+// Which whole-view actions each view offers is owned by LibraryAllActions so the
+// toolbar and the component can never disagree about what is available.
+const allLabels:Record<AllAction,string> = {
+  unfavorite:'已全部取消收藏', clear_history:'已全部清除观看记录',
+  mark_watched:'已全部标记为已看', mark_unwatched:'已全部标记为未看'};
 const viewIcons:Record<View,IconName>={all:'library',movies:'film',series:'series',continue:'continue',favorites:'favorite',history:'history'};
 type Filters = { view: View; root: string; folder: string; recursive: boolean; q: string; layout: 'grid' | 'list'; sort: string; page: number; pageSize: number;
   format: string; watch: 'all' | 'watched' | 'unwatched'; duration: '' | 'short' | 'medium' | 'long'; grouped: boolean; show: string; season: string };
@@ -91,7 +108,16 @@ function App() {
   const [bulkMode, setBulkMode] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState('');
+  const { directories } = useLibraryLayout();
   const grouped = filters.view === 'series' && filters.grouped;
+  // The directory sidebar applies to 全部视频 only; other views keep their own
+  // route filters so the tree cannot silently hide results they expect.
+  const showDirectories = directories && filters.view === 'all' && !grouped;
+  // Names the exact row set a 全部操作 will touch, so the confirmation dialog and
+  // the toolbar hint agree with what the user sees on screen.
+  const scopeLabel = `${{ all: '全部视频', movies: '电影', series: '剧集', continue: '继续观看',
+    history: '观看历史', favorites: '收藏' }[filters.view]}${filters.root ? '（当前媒体目录）' : ''}`;
   useEffect(() => { setPicked([]); setBulkMode(false); }, [filters.view, filters.root, filters.folder, filters.recursive, filters.q, filters.format, filters.watch, filters.duration, grouped]);
   function pick(ids: number[]) {
     setPicked(current => { const next = [...new Set([...current, ...ids])];
@@ -254,7 +280,7 @@ function App() {
     </Suspense>}
     <main hidden={Boolean(router.route.mediaId)||routeLoading}>
       <header>
-        <div className="brand"><span className="logo"><Icon name="play" size={20}/></span><div><b>AVHub</b><small>本地视频库</small></div></div>
+        <div className="brand"><span className="logo"><Icon name="play" size={20}/></span><div><b>MP4Hub</b><small>本地视频库</small></div></div>
         <nav className="primary-nav" aria-label="视频分类">{views.map(v => <button key={v.id}
           className={filters.view === v.id ? 'active' : ''} aria-pressed={filters.view === v.id}
           onClick={() => setFilters(f => ({ ...f, view: v.id, show: '', season: '', page: 1, ...(v.id === 'series' && f.grouped ? {folder:'',recursive:true,format:'',watch:'all' as const,duration:'' as const} : {}) }))}><Icon name={viewIcons[v.id]} size={16}/>{v.label}</button>)}
@@ -275,7 +301,14 @@ function App() {
           <ThemeToggle/>
           <button className="ui-icon-button" aria-label="媒体库设置" title="媒体库设置" onClick={() => setSettings(true)}><Icon name="settings"/></button></div>
       </header>
-      <div className="app-layout"><section className="library">
+      <div className={`app-layout${showDirectories ? ' has-directories' : ''}`}>{showDirectories && <DirectoryTree
+        root={filters.root} folder={filters.folder} total={total} revision={revision}
+        rootId={id => setFilters(f => ({ ...f, root: String(id), recursive: true }))}
+        changeRoot={root => setFilters(f => ({ ...f, root, folder: '', recursive: true, page: 1 }))}
+        select={entry => setFilters(f => entry
+          ? { ...f, root: String(entry.root_id), folder: entry.folder, recursive: true, page: 1 }
+          : { ...f, folder: '', recursive: true, page: 1 })} />}
+      <section className="library">
         <ScanProgress job={scan.job} cancel={scan.cancel} connectionError={scan.connectionError} />
         <div className="toolbar">
           <DirectoryFilter roots={roots} value={filters.root} change={root => setFilters(f => ({ ...f, root, folder: '', show: '', season: '', recursive: true, page: 1 }))} />
@@ -285,18 +318,38 @@ function App() {
           </select>
           <button className={`advanced-toggle${filters.format || filters.watch !== 'all' || filters.duration ? ' active' : ''}`} aria-expanded={advancedOpen}
             onClick={() => setAdvancedOpen(value => !value)}><Icon name="filter" size={16}/>更多筛选{filters.format || filters.watch !== 'all' || filters.duration ? ' · 已启用' : ''}</button>
-          <Button icon="edit" aria-pressed={bulkMode} onClick={() => { setBulkMode(value => !value); setPicked([]); }}>批量整理</Button>
+          {filters.view === 'all' && <Button icon="folder" aria-pressed={directories}
+            onClick={() => changeLibraryDirectories(!directories)}>目录结构</Button>}
+          <Button icon="edit" aria-pressed={bulkMode} onClick={() => { setBulkMode(value => !value); setPicked([]); }}>
+            {batchViews.includes(filters.view) ? '批量操作' : '批量整理'}</Button>
+          {/* 全部操作：不需要选中任何视频，作用于当前视图（含目录范围）的全部记录。
+              紧跟在批量操作右侧、同一行内渲染；全部视频等视图不显示。 */}
+          {libraryAllActions(filters.view).length > 0 && <>
+            <LibraryAllActions view={filters.view} rootId={filters.root} scope={scopeLabel}
+              done={(action, count) => {
+                setPicked([]); setRevision(value => value + 1);
+                setNotice(`${allLabels[action]} · 已处理 ${count} 个视频，源文件未修改`);
+              }}/>
           </>}
-          <div className="library-view-controls"><CoverSizeControl disabled={!grouped&&filters.layout==='list'}/>
+          </>}          <div className="library-view-controls"><CoverSizeControl disabled={!grouped&&filters.layout==='list'}/>
           {!grouped&&<div className="switch">{(['grid','list'] as const).map(layout => <button key={layout} aria-label={layout === 'grid' ? '封面墙' : '列表'}
             aria-pressed={filters.layout===layout} title={layout==='grid'?'封面墙':'列表'} className={filters.layout === layout ? 'active' : ''} onClick={() => setFilters(f => ({ ...f, layout }))}><Icon name={layout==='grid'?'grid':'list'} size={17}/></button>)}</div>}</div>
         </div>
         {grouped ? <SeriesLibrary q={filters.q} root={filters.root} show={filters.show} season={filters.season} page={filters.page} pageSize={filters.pageSize} revision={revision}
           change={change => setFilters(f => ({...f, ...change, ...(change.show ? {q: ''} : {})}))} play={open}/> : <>
-        {bulkMode && <div className="bulk-selection-bar" aria-label="批量选择"><span>已选 {picked.length} / 500 · 支持跨页选择</span>
-          <Button disabled={loading} onClick={() => pick(visible.map(m => m.id))}>选中本页</Button>
-          <Button disabled={!picked.length} onClick={() => setPicked([])}>清空选择</Button>
-          <Button icon="edit" variant="primary" disabled={!picked.length} onClick={() => setBulkOpen(true)}>编辑所选</Button></div>}
+        {bulkMode && (batchViews.includes(filters.view)
+          ? <BatchActions ids={picked} view={filters.view} clear={() => setPicked([])}
+              done={(action, count) => {
+                setPicked([]); setRevision(value => value + 1);
+                setNotice(`${batchLabels[action]} · 已处理 ${count} 个视频，源文件未修改`);
+              }}/>
+          : <div className="bulk-selection-bar" aria-label="批量选择"><span>已选 {picked.length} / 500 · 支持跨页选择</span>
+            <Button disabled={loading} onClick={() => pick(visible.map(m => m.id))}>选中本页</Button>
+            <Button disabled={!picked.length} onClick={() => setPicked([])}>清空选择</Button>
+            <Button icon="edit" variant="primary" disabled={!picked.length} onClick={() => setBulkOpen(true)}>编辑所选</Button></div>)}
+        {batchViews.includes(filters.view) && bulkMode && <div className="bulk-selection-bar secondary" aria-label="批量选择辅助">
+          <Button disabled={loading} onClick={() => pick(visible.map(m => m.id))}>选中本页 {visible.length} 个</Button>
+          <small>跨页选择保留已勾选项；每批最多 500 个。</small></div>}
         {roots.find(root => String(root.id) === filters.root) && <FolderBrowser key={filters.root} root={roots.find(root => String(root.id) === filters.root)!}
           folder={filters.folder} recursive={filters.recursive} revision={revision} change={folder => setFilters(f => ({ ...f, folder, page: 1 }))}
           changeRecursive={recursive => setFilters(f => ({ ...f, recursive, page: 1 }))} />}
@@ -331,7 +384,7 @@ function App() {
             </div>
             <div className="card-footer"><div className="meta"><button className="video-title" title={m.title} onClick={() => open(m)}>{m.title}</button>
               <span>{m.watched && filters.view!=='history'?<><Icon name="check" size={12}/> 已看 · </>:null}{filters.view === 'history' ? `${historyTime(m.last_played)} · ${m.watched ? '已看完' : `看到 ${duration(m.progress)}`}` :
-                m.kind === 'episode' ? episodeLabel(m) : `${formatLabel(m.ext)} · ${m.height ? `${m.height}p` : '分辨率未知'}`}</span></div>
+                m.kind === 'episode' ? episodeLabel(m) : `${formatLabel(m.ext)} · ${m.height ? `${m.height}p` : '分辨率未知'}${mediaSizeLabel(m.size) ? ` · ${mediaSizeLabel(m.size)}` : ''}`}</span></div>
               <MediaActions media={m} update={updateMedia} changed={()=>setRevision(value=>value+1)} notify={setNotice}/></div>
             </article>)}</div> : <EmptyState icon={viewIcons[filters.view]} title={filters.view === 'continue' ? '暂无可继续观看的视频' : filters.view === 'favorites' ? '暂无收藏视频' : filters.view === 'history' ? '暂无观看历史' : '暂无匹配的视频'}
             description={roots.length ? '可以切换分类、目录或清除搜索条件。' : '添加视频文件夹后，点击刷新媒体库开始扫描。'}>
@@ -355,7 +408,7 @@ function Startup() {
   const [attempt,setAttempt]=useState(0);
   useEffect(()=>{
     let active=true;setError('');
-    void checkServiceBuild().then(initializePreferences).then(()=>{if(active){initializeAppearance();initializeAutoplay();setReady(true);}}).catch(e=>{if(active)setError(errorText(e));});
+    void checkServiceBuild().then(initializePreferences).then(()=>{if(active){initializeAppearance();initializeAutoplay();initializeResume();initializeLibraryLayout();setReady(true);}}).catch(e=>{if(active)setError(errorText(e));});
     return ()=>{active=false;};
   },[attempt]);
   if(ready)return <App/>;
