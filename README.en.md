@@ -13,6 +13,51 @@ Two runtime modes are available:
 
 **The application UI is currently Chinese.** This English README does not imply English UI support. The repository primarily contains source code, not FFmpeg executables, generated web assets, personal library data, or portable EXEs.
 
+## Download
+
+End users should grab the portable build directly — no Python, Node.js, or FFmpeg installation required:
+
+**➡️ [Releases](https://github.com/sddvcm/mp4hub/releases)** — download `MP4Hub-portable-<version>-x64.exe`
+
+Place it in a writable directory and double-click to launch. Library data is stored in `AVHub-data/` next to the EXE; copy that directory along with the EXE to migrate. See the [usage guide](USAGE.md) for first-run steps (in Chinese).
+
+## What's new (v0.2.0)
+
+> This build is customized from the upstream AVHub (baseline `fd1cc20`): **82 files changed, +4,719 / −409 lines**.
+> Full itemized comparison: [docs/DIFF-FROM-UPSTREAM.md](docs/DIFF-FROM-UPSTREAM.md) (Chinese).
+
+**Features added**
+
+1. **Resume mode with three strategies** — restart / resume / always ask (default: ask).
+2. **Multi-level media directory tree** — expand folders to any depth and filter by clicking a folder.
+3. **All-actions buttons (no selection needed)** — act on every record in the current view, inline right of the batch-actions button.
+4. **Batch organize** — batch favorite/unfavorite, mark watched/unwatched, reset progress, clear history.
+5. **Sort by resolution / file size** — ascending or descending; missing values always sort last.
+6. **Cover cards show size on disk** — `format · resolution · size` (e.g. `MP4 · 1080p · 1.2 GB`).
+7. **Data directory defaults next to the program** — portable builds use `AVHub-data/` beside the EXE.
+8. **Folder picker remembers the last location** — no more starting from the root each time.
+9. **Native directory dialog via Electron** — packaged builds no longer depend on Python tkinter.
+10. **Appearance system** — theme (light by default) plus four cover sizes.
+11. **Configurable autoplay scope** — same series or same directory, with on/off toggle.
+12. **About entry** — top-left of the desktop title bar, showing version, build ID, and a link to the project page.
+13. **Rebranded to MP4Hub** with a redesigned icon set.
+14. **Renamed launcher** — `启动MP4Hub.bat`.
+
+**Issues fixed**
+
+| Problem | Root cause | Fix |
+| --- | --- | --- |
+| Packaged build: `No module named 'tkinter'` when picking a folder | Frozen environment lacks tkinter | Folder picking now goes through the Electron native dialog |
+| Portable build used an inconvenient data directory | Defaulted to the user config directory | Defaults next to the program; falls back only when not writable |
+| Folder picker did not remember the last location | Always started from the root | Last picked path is recorded and reused |
+| Unknown resolution / size sorted in the middle | Missing values participated in sorting | Missing values and unknown sizes sort last |
+| Cover card showed a bogus `0.0 KB` | Missing size treated as 0 | Only the first two segments are shown when size is absent |
+| A frame flickered when choosing "restart" | Resume seek timing | Corrected start-up seek |
+| "All actions" scope was unclear | No scope hint | Hover tooltip shows "action · scope"; destructive ones confirm first |
+| New preference keys could not be saved | Server whitelist did not include them | Whitelist and validation extended |
+
+**UI adjustments** — the all-actions buttons are now inline to the right of batch actions (no separate row); "About" moved to the desktop title bar; the directory tree view and the light theme are on by default.
+
 ## Documentation
 
 | Document | Contents |
@@ -22,14 +67,6 @@ Two runtime modes are available:
 | [Diff from upstream (Chinese)](docs/DIFF-FROM-UPSTREAM.md) | Itemized features added and issues fixed versus the upstream AVHub |
 | [docs/](docs/) | Per-iteration development, analysis, and verification records |
 | [README.md](README.md) | Chinese README |
-
-## Download
-
-End users should grab the portable build directly — no Python, Node.js, or FFmpeg installation required:
-
-**➡️ [Releases](https://github.com/sddvcm/mp4hub/releases)** — download `MP4Hub-portable-<version>-x64.exe`
-
-Place it in a writable directory and double-click to launch. Library data is stored in `AVHub-data/` next to the EXE; copy that directory along with the EXE to migrate. See the [usage guide](USAGE.md) for first-run steps (in Chinese).
 
 ## Features
 
