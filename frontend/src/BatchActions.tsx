@@ -15,6 +15,9 @@ const confirmations: Partial<Record<BatchAction, (count: number) => string>> = {
   unfavorite: count => `将取消 ${count} 个视频的收藏。继续？`,
 };
 
+/** Actions rendered in the red "danger" style — same set as the 全部操作 row. */
+const dangerActions: ReadonlySet<BatchAction> = new Set<BatchAction>(['unfavorite', 'clear_history']);
+
 /** Per-view action set. The order here is the order shown on the toolbar. */
 const actionSets: Record<string, BatchAction[]> = {
   history: ['favorite', 'unfavorite', 'mark_watched', 'mark_unwatched', 'reset_watched', 'clear_history'],
@@ -46,7 +49,7 @@ export function BatchActions({ ids, view, done, clear }: {
   return <div className="bulk-selection-bar batch-actions" aria-label="批量操作">
     <span>已选 {ids.length} / 500 · 支持跨页选择</span>
     {actions.map(action => <Button key={action} disabled={!ids.length || busy}
-      variant={action === 'clear_history' ? 'danger' : 'default'}
+      variant={dangerActions.has(action) ? 'danger' : 'default'}
       onClick={() => void run(action)}>{labels[action]}</Button>)}
     <Button disabled={!ids.length || busy} onClick={clear}>清空选择</Button>
     {error && <StatusMessage kind="error">{error}<Button icon="close" onClick={() => setError('')}>关闭</Button></StatusMessage>}

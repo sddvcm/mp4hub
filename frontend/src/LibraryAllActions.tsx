@@ -30,6 +30,13 @@ const destructive: Partial<Record<AllAction, (scope: string) => string>> = {
 };
 
 /**
+ * Actions rendered in the red "danger" style. 全部取消收藏 and 全部清除观看记录
+ * are both destructive (they discard user data), so they share the same colour;
+ * the additive 标记 actions stay neutral.
+ */
+const dangerActions: ReadonlySet<AllAction> = new Set<AllAction>(['unfavorite', 'clear_history']);
+
+/**
  * Which whole-view actions this view offers. The policy itself lives in
  * viewActions.ts so it stays assertable without a DOM.
  */
@@ -64,7 +71,7 @@ export function LibraryAllActions({ view, rootId, scope, done }: {
 
   return <>
     {actions.map(action => <Button key={action} disabled={busy}
-      variant={action === 'clear_history' ? 'danger' : 'default'}
+      variant={dangerActions.has(action) ? 'danger' : 'default'}
       title={`${labels[action]} · ${scope}`}
       onClick={() => void run(action)}>{labels[action]}</Button>)}
     {error && <StatusMessage kind="error">{error}<Button icon="close" onClick={() => setError('')}>关闭</Button></StatusMessage>}
