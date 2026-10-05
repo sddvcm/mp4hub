@@ -19,13 +19,15 @@ MP4Hub 是一个面向 Windows 的**本地离线视频库与播放器**。它把
 
 ### 方式 A：便携版（推荐普通用户）
 
-1. 从 [Releases](https://github.com/sddvcm/mp4hub/releases) 下载 `MP4Hub-portable-0.2.0-x64.exe`。
+1. 从 [Releases](https://github.com/sddvcm/mp4hub/releases) 下载 `MP4Hub-portable-0.3.0-x64.exe`（请以最新 Release 的版本号为准）。
 2. 放到一个**可写**的目录，例如 `D:\MP4Hub\`。
 3. 双击运行。首次启动需要等待解压和本地服务就绪，请耐心几秒。
 
 不需要额外安装 Python、Node.js 或 FFmpeg —— 便携版已内置运行所需组件。
 
 > **建议**：把 EXE 放进一个独立文件夹再运行。媒体库数据会保存在 EXE 同级的 `AVHub-data/` 目录，独立文件夹便于整体备份或迁移。
+
+> **确认版本**：启动后顶栏「MP4Hub」右侧会显示当前版本号徽标（如 `0.3.0`）；点击左上角标题栏的 ⓘ「关于」按钮，还能看到版本号、构建标识与构建时间，便于对照更新记录或反馈问题。
 
 ### 方式 B：从源码运行
 
