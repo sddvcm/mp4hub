@@ -220,7 +220,7 @@ test('audio switching preserves paused/playing states and default audio can retu
   await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => !v.paused)).toBe(true);
 });
 
-test('browser mode blocks foreign writes and serves frame protection headers', async ({ request }) => {
+test('local service blocks foreign writes and serves frame protection headers', async ({ request }) => {
   const rejected = await request.put('/api/media/2/favorite', { headers: { Origin: 'https://foreign.example' }, data: { favorite: true } });
   expect(rejected.status()).toBe(403);
   expect((await (await request.get('/api/media/2')).json()).favorite).toBe(0);

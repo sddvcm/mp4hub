@@ -67,7 +67,7 @@ test('resume prompt does not autoplay; pause/back saves progress; favorites upda
   await expect.poll(() => page.locator('video').evaluate((v: HTMLVideoElement) => v.currentTime)).toBeGreaterThan(beforeSkip + 4);
 });
 
-test('browser mode does not expose page fullscreen; video fullscreen remains available', async ({ page }) => {
+test('page fullscreen stays unavailable; video fullscreen remains available', async ({ page }) => {
   await page.goto('/?root=1');
   await page.getByRole('button', { name: '播放 视频 001', exact: true }).click();
   await page.getByRole('button', { name: '从头开始', exact: true }).click();
@@ -352,7 +352,7 @@ test('playlist catches HTML even when an outdated service labels it as JSON', as
   }));
   await page.goto('/');
   await page.getByRole('button', { name: '播放列表', exact: true }).click();
-  await expect(page.getByRole('alert')).toHaveText('本地服务与网页版本不匹配，请完全退出并重新启动 AVHub');
+  await expect(page.getByRole('alert')).toHaveText('界面与本地服务版本不匹配，请完全退出并重新启动 MP4Hub');
   await expect(page.getByRole('alert')).not.toContainText('Unexpected token');
 });
 
@@ -373,7 +373,7 @@ test('backup does not download the SPA page as a database file', async ({ page }
   await page.getByRole('button', { name: '媒体库设置', exact: true }).click();
   await page.getByRole('tab', { name:'数据管理', exact:true }).click();
   await page.getByRole('button', { name: '下载媒体库备份', exact: true }).click();
-  await expect(page.getByText('本地服务与网页版本不匹配，请完全退出并重新启动 AVHub', { exact: true })).toBeVisible();
+  await expect(page.getByText('界面与本地服务版本不匹配，请完全退出并重新启动 MP4Hub', { exact: true })).toBeVisible();
 });
 
 test('backup restore never reports success for an HTML response mislabeled as JSON', async ({ page }) => {
@@ -387,7 +387,7 @@ test('backup restore never reports success for an HTML response mislabeled as JS
   await page.getByRole('tab', { name:'数据管理', exact:true }).click();
   await page.getByLabel('选择备份文件').setInputFiles({ name: 'backup.db', mimeType: 'application/octet-stream', buffer: Buffer.from('fixture') });
   await page.getByRole('button', { name: '校验并预览备份', exact: true }).click();
-  await expect(page.getByText('本地服务与网页版本不匹配，请完全退出并重新启动 AVHub', { exact: true })).toBeVisible();
+  await expect(page.getByText('界面与本地服务版本不匹配，请完全退出并重新启动 MP4Hub', { exact: true })).toBeVisible();
 });
 
 test('subtitle does not accept an HTML fallback page as caption data', async ({ page }) => {
@@ -401,7 +401,7 @@ test('subtitle does not accept an HTML fallback page as caption data', async ({ 
   const subtitleSelect = page.getByRole('combobox', { name: '字幕轨道' });
   await expect(subtitleSelect).toBeVisible();
   await subtitleSelect.selectOption('embedded:2');
-  await expect(page.getByRole('alert')).toHaveText('本地服务与网页版本不匹配，请完全退出并重新启动 AVHub');
+  await expect(page.getByRole('alert')).toHaveText('界面与本地服务版本不匹配，请完全退出并重新启动 MP4Hub');
 });
 
 test('history view lists played videos and clearing an entry keeps the source video', async ({ page, request }) => {

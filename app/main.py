@@ -594,10 +594,10 @@ async def desktop_response(request: Request, call_next):
 class RootInput(BaseModel): path: str
 class RelocateInput(BaseModel): path: str
 class PickInput(BaseModel):
-    """Desktop builds pass the path returned by Electron's native folder dialog.
+    """Carries the path returned by Electron's native folder dialog.
 
-    The frozen backend ships without tkinter, so the renderer asks Electron for the
-    folder and forwards the result here. Browser builds omit it and fall back to tkinter.
+    The renderer asks Electron for the folder and forwards the confirmed path here;
+    the service itself never opens a GUI.
     """
     path: str | None = None
 class ProgressInput(BaseModel):
@@ -707,20 +707,12 @@ def save_screenshot_settings(body:ScreenshotSettingsInput):
 
 @app.post('/api/screenshots/pick')
 def pick_screenshot_directory(body: PickInput | None = None):
+    # The native folder dialog always comes from the Electron shell; the service
+    # never opens a GUI of its own.
     supplied = body.path if body else None
-    if supplied:
-        return {'directory': str(Path(supplied).expanduser().resolve())}
-    window=None
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        window=tk.Tk();window.withdraw();window.attributes('-topmost',True)
-        selected=filedialog.askdirectory(title='选择截图默认保存目录',mustexist=True)
-        return {'directory':selected} if selected else {'cancelled':True}
-    except Exception as exc:raise HTTPException(500,'无法打开目录选择器，请手动输入现有目录的完整路径') from exc
-    finally:
-        if window:
-            with suppress(Exception):window.destroy()
+    if not supplied:
+        raise HTTPException(400,'请通过应用窗口选择目录')
+    return {'directory': str(Path(supplied).expanduser().resolve())}
 
 @app.get('/api/screenshots/directory')
 def screenshot_directory():
@@ -817,30 +809,13 @@ def add_root(body: RootInput):
 def pick_root(body: PickInput | None = None):
     """Add the folder chosen by the native picker.
 
-    The desktop build is driven by Electron's folder dialog (see avhub:pick-directory);
-    that path arrives in the body. Without a body this falls back to tkinter, which is
-    only available when running the source/browser build with a tk-enabled Python.
+    The folder is always selected by Electron's dialog (see avhub:pick-directory)
+    and forwarded in the body. The service never opens a GUI of its own.
     """
     supplied = body.path if body else None
-    if supplied:
-        return add_root(RootInput(path=supplied))
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        window = tk.Tk()
-        window.withdraw()
-        window.attributes("-topmost", True)
-        # Start at the most recently added media directory instead of the drive root.
-        with connection() as db:
-            recent = db.execute("SELECT path FROM roots ORDER BY added_at DESC, id DESC LIMIT 1").fetchone()
-        initial = recent["path"] if recent and Path(recent["path"]).is_dir() else None
-        selected = filedialog.askdirectory(title="选择要加入 MP4Hub 的视频文件夹", mustexist=True, initialdir=initial)
-        window.destroy()
-    except Exception as exc:
-        raise HTTPException(500, f"无法打开系统文件夹选择器：{exc}") from exc
-    if not selected:
-        return JSONResponse({"cancelled": True}, status_code=200)
-    return add_root(RootInput(path=selected))
+    if not supplied:
+        raise HTTPException(400, "请通过应用窗口选择媒体目录")
+    return add_root(RootInput(path=supplied))
 
 @app.delete("/api/roots/{root_id}")
 def remove_root(root_id: int):
@@ -889,18 +864,9 @@ def pick_relocation(root_id: int, body: PickInput | None = None):
         if not db.execute("SELECT 1 FROM roots WHERE id=?", (root_id,)).fetchone():
             raise HTTPException(404, "媒体目录不存在")
     supplied = body.path if body else None
-    if supplied:
-        return relocate_root(root_id, RelocateInput(path=supplied))
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        window = tk.Tk(); window.withdraw(); window.attributes("-topmost", True)
-        selected = filedialog.askdirectory(title="选择该媒体库的新位置", mustexist=True)
-        window.destroy()
-    except Exception as exc:
-        raise HTTPException(500, f"无法打开系统文件夹选择器：{exc}") from exc
-    if not selected: return {"cancelled": True}
-    return relocate_root(root_id, RelocateInput(path=selected))
+    if not supplied:
+        raise HTTPException(400, "请通过应用窗口选择目录")
+    return relocate_root(root_id, RelocateInput(path=supplied))
 
 
 @app.get("/api/backup")

@@ -202,9 +202,9 @@ ipcMain.handle('avhub:screenshot-action',async(event,id:unknown,action:unknown)=
 });
 
 // Native folder picker for 添加媒体目录 / 重新定位 / 截图目录。
-// The frozen Python backend has no tkinter, so the desktop build must use Electron's
-// own dialog. The renderer only sends a purpose tag; the chosen path is validated here
-// and never trusted from the renderer directly.
+// The Python service never opens a GUI, so folder selection always goes through
+// Electron's own dialog. The renderer only sends a purpose tag; the chosen path is
+// validated here and never trusted from the renderer directly.
 const PICK_PURPOSES = ['video', 'screenshot'] as const;
 ipcMain.handle('avhub:pick-directory', async (event, purpose: unknown) => {
   const window = trustedWindow(event);
@@ -302,11 +302,11 @@ function startBackend(): ChildProcess {
   };
   if (isPackaged) {
     const executable = path.join(process.resourcesPath, 'backend', 'AVHubServer.exe');
-    return spawn(executable, ['--port', String(backendPort), '--no-browser'], {
+    return spawn(executable, ['--port', String(backendPort)], {
       cwd: path.dirname(executable), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
     });
   }
-  return spawn(process.env.AVHUB_PYTHON || 'python', ['run.py', '--port', String(backendPort), '--no-browser'], {
+  return spawn(process.env.AVHUB_PYTHON || 'python', ['run.py', '--port', String(backendPort)], {
     cwd: projectRoot, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
 }

@@ -6,10 +6,7 @@ MP4Hub is an offline local video library and player for Windows. It brings multi
 
 Videos stay in their original locations. By default the app only changes its own index, artwork, settings, and viewing records; it never moves or renames a source video. **The only operation that touches the original file is Delete**, available in each card's "more" menu, which offers either moving the file to the Recycle Bin or deleting it permanently, and removes the library record afterwards. Once dependencies are installed or a portable build is ready, everyday scanning and playback work offline, without online artwork or metadata scraping.
 
-Two runtime modes are available:
-
-- **Electron desktop app**: a standalone window with always-on-top, aspect-ratio-adaptive borderless Pure Playback, and desktop folder operations.
-- **Browser app**: a Python-powered local server accessed through Edge / Chrome. It cannot pin or automatically resize the browser window.
+The app runs as an **Electron desktop application**: a standalone window with always-on-top, aspect-ratio-adaptive borderless Pure Playback, and desktop folder operations. Its Python service listens on the local loopback address only and is driven exclusively by the app window; **no browser access mode is provided**.
 
 **The application UI is currently Chinese.** This English README does not imply English UI support. The repository primarily contains source code, not FFmpeg executables, generated web assets, personal library data, or portable EXEs.
 
@@ -21,12 +18,12 @@ End users should grab the portable build directly — no Python, Node.js, or FFm
 
 Place it in a writable directory and double-click to launch. Library data is stored in `AVHub-data/` next to the EXE; copy that directory along with the EXE to migrate. See the [usage guide](USAGE.md) for first-run steps (in Chinese).
 
-## What's new (v0.2.0)
+## What's new (v0.5.0)
 
-> This build is customized from the upstream AVHub (baseline `fd1cc20`): **82 files changed, +4,719 / −409 lines**.
-> Full itemized comparison: [docs/DIFF-FROM-UPSTREAM.md](docs/DIFF-FROM-UPSTREAM.md) (Chinese).
+> From v0.5.0 onward MP4Hub ships as a **desktop-only** single-machine app: the browser access mode has been removed and the local service is driven exclusively by the app window.
+> All customizations relative to the upstream AVHub (baseline `fd1cc20`) are itemized in [docs/DIFF-FROM-UPSTREAM.md](docs/DIFF-FROM-UPSTREAM.md) (Chinese).
 
-**Features added**
+**Highlights**
 
 1. **Resume mode with three strategies** — restart / resume / always ask (default: ask).
 2. **Multi-level media directory tree** — expand folders to any depth and filter by clicking a folder.
@@ -41,7 +38,9 @@ Place it in a writable directory and double-click to launch. Library data is sto
 11. **Configurable autoplay scope** — same series or same directory, with on/off toggle.
 12. **About entry** — top-left of the desktop title bar, showing version, build ID, and a link to the project page.
 13. **Rebranded to MP4Hub** with a redesigned icon set.
-14. **Renamed launcher** — `启动MP4Hub.bat`.
+14. **Version badge in the title bar** — the current version is shown next to the MP4Hub brand.
+15. **Delete video from the card "more" menu** — Recycle Bin or permanent deletion, with the library record removed afterwards.
+16. **Browser access removed** — `启动MP4Hub.bat` deleted; the local service no longer opens a browser and is driven solely by the app window.
 
 **Issues fixed**
 
@@ -73,7 +72,7 @@ Place it in a writable directory and double-click to launch. Library data is sto
 ### Library
 
 - Multiple local directories, added through a native folder picker or a typed path; the picker **reopens where you last chose a folder** instead of starting over. Per-directory scans, incremental library refresh, and interrupted-scan recovery.
-- **The desktop shell owns the folder picker**: the Electron build (including the portable EXE) opens the native directory dialog in the main process and hands the confirmed path to the local service, so packaged builds never depend on Python's tkinter. The browser build falls back to the server-side tkinter dialog; when the runtime ships without tkinter, enter the full path directly in Settings.
+- **The desktop shell owns the folder picker**: the app window opens the native directory dialog in the main process and hands the confirmed path to the local service. The service itself never opens a GUI, so packaged builds never depend on Python's tkinter.
 - Grid, list, and folder browsing; all videos, movies, series, continue watching, favorites, history, and playlists. Cover cards show `format · resolution · size` (for example `MP4 · 1080p · 1.2 GB`); when the index has no size only the first two segments appear, so no bogus "0.0 KB".
 - Search titles, filenames, and tags; filter and sort by directory, format, duration, and watched status.
 - **Sort orders**: beyond most-recently-watched / added and name, sort by duration, **by resolution** (width × height pixel count), or **by file size**, ascending or descending. Items with unknown resolution or size are consistently pushed to the end of the list.
@@ -121,7 +120,7 @@ Run the following commands in PowerShell from the project root. Initial dependen
 | Python | 3.10 or newer; the current local validation environment uses 3.13 |
 | Node.js | 22.12 or newer, satisfying the currently locked frontend and Electron dependencies |
 | FFmpeg / FFprobe | Windows executables in the project `bin/` directory or on PATH |
-| Browser | Edge / Chrome for browser mode; Electron includes Chromium |
+| Browser | The app window uses Electron's bundled Chromium; no separate browser is required |
 | PowerShell 7 | Required for the current Windows packaging script, not for ordinary startup |
 
 If you do not already have the source:
@@ -165,16 +164,16 @@ $env:AVHUB_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe).Path
 npm run electron:dev
 ```
 
-### 4. Start browser mode
+### 4. Run the backend service directly (optional)
+
+The app window starts and manages the backend on its own, so this is normally unnecessary. Only when debugging backend issues, you can start the service separately to inspect logs:
 
 ```powershell
 npm run build
-python run.py
+python run.py --port 8870
 ```
 
-The default URL is `http://127.0.0.1:8765`. Startup opens the system's default browser. After installing dependencies and building the UI, you can also double-click [启动MP4Hub.bat](启动MP4Hub.bat). That launcher starts browser mode only; it does not install dependencies or build assets.
-
-Use `python run.py --no-browser` to skip opening a browser, or `python run.py --port 8870` if the default port is occupied.
+The service listens on `127.0.0.1` only. It does not open a browser or enter the library UI, and its endpoints require the session token carried by the app window.
 
 ## First use
 
@@ -239,13 +238,13 @@ The mouse wheel zooms around the pointer. Drag the image while zoomed, and use t
 
 After clicking a playback control, Space still plays or pauses instead of activating that button again. Text fields, open menus, and settings keep their own keyboard behavior.
 
-**Pure Playback** hides library and page information. Desktop mode also adapts the window to the video's aspect ratio, with controls overlaid on the image, and restores the previous window when exiting. Browser mode changes only the page layout; it cannot resize or pin the browser window. Black bars encoded into the video itself are not automatically cropped.
+**Pure Playback** hides library and page information and adapts the window to the video's aspect ratio, with controls overlaid on the image; exiting restores the previous window. Black bars encoded into the video itself are not automatically cropped.
 
 ## Screenshots
 
 Open Settings → **播放偏好** (Playback preferences) → **视频截图** (Video screenshots), choose a destination, and click “保存截图设置” (Save screenshot settings). An empty path uses `screenshots/` under the active data directory. A custom directory must already exist and be writable.
 
-Click the camera icon or press **C** to save a PNG. Filenames include the video title, playback position, and capture time; successive captures do not overwrite one another. There is no save dialog. Playing videos keep playing, and paused videos stay paused. Desktop mode can open the destination folder; browser mode can copy its path.
+Click the camera icon or press **C** to save a PNG. Filenames include the video title, playback position, and capture time; successive captures do not overwrite one another. There is no save dialog. Playing videos keep playing, and paused videos stay paused. You can open the destination folder in one click.
 
 Screenshots capture the **currently decoded image** at its decoded dimensions, excluding controls, text-subtitle overlays, and display-layer zoom or rotation. Subtitles burned into the source remain visible. During transcoded playback, the screenshot captures the transcoded output, not guaranteed original HDR / 10-bit data. Paused frame-by-frame selection is not currently available. **C is the only screenshot shortcut.**
 
@@ -255,14 +254,13 @@ Runtime modes use different default directories and do not automatically share a
 
 | Runtime | Default location |
 | --- | --- |
-| Source browser mode | `data/` in the project root |
-| Source Electron mode | `data/` under Electron's user configuration directory; see Runtime diagnostics for the exact path |
+| Source run (`npm run dev`) | `data/` in the project root |
 | Electron portable EXE | `AVHub-data/` next to the EXE, falling back to Electron's user configuration directory if unwritable |
 | Custom location | Set `AVHUB_DATA_DIR` before startup; it overrides the defaults above |
 
 The data directory contains `library.db`, thumbnails, custom artwork, and playback caches. Desktop mode also stores Chromium profile data and logs. Screenshots default to this directory but can use a separate location.
 
-For example, run browser mode with a dedicated data directory:
+For example, run the backend service with a dedicated data directory:
 
 ```powershell
 $env:AVHUB_DATA_DIR = 'D:\MP4HubData'
@@ -278,13 +276,13 @@ python run.py
 
 ## Development and tests
 
-### Web hot reload
+### Frontend hot reload
 
-After installing dependencies, build once and start the backend:
+After installing dependencies, build once and start the backend service:
 
 ```powershell
 npm run build
-python run.py --no-browser
+python run.py
 ```
 
 In another terminal at the project root:
@@ -293,7 +291,7 @@ In another terminal at the project root:
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Vite proxies `/api`, `/media`, and `/thumbs` to `127.0.0.1:8765`; use the default backend port for this setup. Restart the service after Python backend changes.
+The Vite dev server proxies `/api`, `/media`, and `/thumbs` to `127.0.0.1:8765`; use the default backend port for this setup. Restart the service after Python backend changes. This is a development-only workflow — run the app window for normal use.
 
 ### Common verification commands
 
@@ -330,7 +328,7 @@ Output:
 dist/electron/MP4Hub-portable-<version>-x64.exe
 ```
 
-The current `package.json` version is `0.2.0`. Existing EXEs do not load updated workspace source; rebuild the package to update the distributed app.
+The current `package.json` version is `0.5.0`. Existing EXEs do not load updated workspace source; rebuild the package to update the distributed app.
 
 If `pwsh` is not recognized, install PowerShell 7 and reopen the terminal. Windows' built-in `powershell.exe` is commonly version 5.1 and is not equivalent to `pwsh`. The current script contains UTF-8 Chinese text, which can cause parsing errors under 5.1. Investigate build errors rather than mistaking an existing old EXE for a successful new build.
 
@@ -348,7 +346,7 @@ mp4hub/
 │  └─ build-windows.ps1   Windows portable build entry point
 ├─ tests/                 Backend and Playwright regression tests
 ├─ docs/                  Iteration, audit, and targeted validation records
-├─ run.py                 Browser / backend entry point
+├─ run.py                 Backend service entry point (loopback only)
 ├─ requirements.txt       Python runtime dependencies
 ├─ requirements-build.txt Python packaging dependencies
 └─ package.json           Frontend, desktop, and verification commands
@@ -360,12 +358,12 @@ React / TypeScript implements the UI, with hls.js for HLS playback. FastAPI bind
 
 - **Blank page, build mismatch, or updates not appearing**: fully exit old instances, run `npm run build`, and restart. For source desktop mode, use `npm run electron:dev`. Generated web assets are not tracked by Git.
 - **Scan, artwork, or transcoding fails**: check FFmpeg / FFprobe paths, folder permissions, disk availability, and thumbnail queue status. Inspect Runtime diagnostics.
-- **The library appears empty**: check the active runtime and data directory. Source browser, source desktop, and portable modes have different defaults.
+- **The library appears empty**: check the active data directory. A source run and a portable build use different defaults.
 - **A file still seeks slowly or does not play**: inspect the actual playback path, codecs, and errors in diagnostics. Remuxing, transcoding, keyframe structure, and hardware capabilities can all affect playback.
 - **Videos are missing after restore or migration**: backups do not include source videos. Restore their accessibility or relocate the directory in Settings, then refresh.
 - **Offline operation, platform, and privacy**: everyday functions do not depend on external services, but initial dependency installation and build downloads are not offline. Data and diagnostics can include local paths and video titles; redact reports before sharing them publicly.
 
-MPV integration, online artwork scraping, account sync, casting, and mobile remote control are not provided. macOS / Linux are not current formally supported desktop portable targets. Complete compatibility with HDR, Dolby Vision, complex subtitles, and every browser combination is not guaranteed.
+MPV integration, online artwork scraping, account sync, casting, mobile remote control, and browser access are not provided. macOS / Linux are not current formally supported desktop portable targets. Complete compatibility with HDR, Dolby Vision, complex subtitles, and every playback environment is not guaranteed.
 
 See [docs/](docs/) for historical records. Withdrawn designs in those records are not current features; this README describes the current source.
 

@@ -81,7 +81,7 @@ test('hidden controls stop progress DOM mutations but keyboard seeks and reveal 
 test('native backup download verifies its prefix and refuses an HTML fallback',async({page})=>{
   await page.route('**/api/data-jobs/*/download',route=>route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><html>stale service</html>'}));
   await page.goto('/');await page.getByRole('button',{name:'媒体库设置'}).click();await page.getByRole('tab',{name:'数据管理'}).click();
-  await page.getByRole('button',{name:'下载媒体库备份'}).click();await expect(page.getByRole('alert')).toContainText('本地服务与网页版本不匹配');
+  await page.getByRole('button',{name:'下载媒体库备份'}).click();await expect(page.getByRole('alert')).toContainText('界面与本地服务版本不匹配');
 });
 
 test('an expired ready preview can be discarded and another backup selected',async({page,request})=>{
