@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from .playback import PlaybackManager
 from .media_delivery import original_file_response
+from . import media_files
 from .scanning import ScanManager
 from .path_index import RootPathIndex
 from .folders import relative_folder, directory_prefix, like_literal, directory_clause
@@ -608,6 +609,7 @@ class PlaybackActivityInput(BaseModel):
     owner: str = Field(pattern=r'^[a-f0-9]{32}$')
     playing: bool
 class WatchedInput(BaseModel): watched: bool
+class DeleteMediaInput(BaseModel): mode: Literal['recycle','permanent'] = 'recycle'
 class PreferencesInput(BaseModel):
     values: dict[str,Any] = Field(max_length=100)
     updated_at: float = Field(default_factory=lambda:time.time()*1000,ge=0,allow_inf_nan=False)
@@ -1700,6 +1702,54 @@ def native_media_path(media_id:int)->Path:
     source=Path(one_media(media_id)['path']).resolve()
     if source.suffix.lower() not in VIDEO_EXTENSIONS or not source.is_file():raise HTTPException(404,'视频文件不存在或格式不受支持')
     return source
+
+@app.post('/api/media/{media_id}/delete')
+def delete_media_file(media_id:int,body:DeleteMediaInput,request:Request):
+    """Delete the source video, then drop its library row so the list stays in sync.
+
+    `mode` is 'recycle' (Recycle Bin) or 'permanent'. Both paths are equally
+    destructive from the library's point of view, so the confirmation lives in the
+    UI and the service only enforces origin, platform and file-type safety.
+    """
+    if request.url.hostname not in {'127.0.0.1','localhost'} or request.headers.get('origin')!=str(request.base_url).rstrip('/'):
+        raise HTTPException(403,'仅允许本机应用发起文件操作')
+    if sys.platform!='win32':raise HTTPException(501,'此功能仅支持 Windows')
+    source=native_media_path(media_id)
+    try:
+        if body.mode=='permanent':media_files.permanent([source])
+        else:media_files.recycle([source])
+    except media_files.DeleteError as exc:
+        raise HTTPException(503,str(exc)) from exc
+    forget_media(media_id)
+    return {'ok':True,'id':media_id,'mode':body.mode}
+
+
+def forget_media(media_id:int)->None:
+    """Remove a media row and every cache artefact that only it referenced."""
+    with connection() as db:
+        row=db.execute('SELECT path,root_id,thumbnail,custom_cover FROM media WHERE id=?',(media_id,)).fetchone()
+        if not row:raise HTTPException(404,'视频不存在')
+        db.execute('DELETE FROM playlist_items WHERE media_id=?',(media_id,))
+        db.execute('DELETE FROM media WHERE id=?',(media_id,))
+        if row['custom_cover']:covers.discard(db,DATA,row['custom_cover'])
+        db.execute('DELETE FROM thumbnail_jobs WHERE media_id=?',(media_id,))
+        reindex_series(db,row['root_id'])
+    for stale in (THUMBS/f'{media_id}.jpg',THUMBS/f'{media_id}.pending.jpg'):
+        with suppress(OSError):stale.unlink(missing_ok=True)
+    with suppress(OSError):shutil.rmtree(HLS/str(media_id),ignore_errors=True)
+
+
+def reindex_series(db,root_id)->None:
+    """Drop series groups left without episodes after a media row disappears.
+
+    Group identity encodes the discovery scope as `["root:<id>", ...]`; manual
+    groups (`["manual", ...]`) are user-authored and always survive.
+    """
+    if root_id is None:return
+    db.execute("""DELETE FROM series_groups WHERE identity LIKE ? AND NOT EXISTS
+        (SELECT 1 FROM media m WHERE m.series_id=series_groups.id)""",
+        (f'["root:{root_id}",%',))
+
 
 @app.post('/api/media/{media_id}/native/{action}')
 def native_media_action(media_id:int,action:Literal['reveal','open'],request:Request):

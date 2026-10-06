@@ -4,7 +4,7 @@ English · [简体中文](README.md)
 
 MP4Hub is an offline local video library and player for Windows. It brings multiple video directories into one interface, lets you browse by folder or by movie and series, and remembers favorites, playlists, and viewing progress.
 
-Videos stay in their original locations. The app does not offer operations to move, rename, or delete source videos. Indexes, artwork, settings, and viewing records are stored separately. Once dependencies are installed or a portable build is ready, everyday scanning and playback work offline, without online artwork or metadata scraping.
+Videos stay in their original locations. By default the app only changes its own index, artwork, settings, and viewing records; it never moves or renames a source video. **The only operation that touches the original file is Delete**, available in each card's "more" menu, which offers either moving the file to the Recycle Bin or deleting it permanently, and removes the library record afterwards. Once dependencies are installed or a portable build is ready, everyday scanning and playback work offline, without online artwork or metadata scraping.
 
 Two runtime modes are available:
 

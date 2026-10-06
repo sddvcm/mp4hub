@@ -160,6 +160,27 @@ ipcMain.handle('avhub:media-action',async(event,mediaId:unknown,action:unknown)=
   return {ok:true};
 });
 
+ipcMain.handle('avhub:media-delete',async(event,mediaId:unknown,mode:unknown)=>{
+  const origin=`http://127.0.0.1:${backendPort}`;
+  if(event.senderFrame!==event.sender.mainFrame || new URL(event.senderFrame.url).origin!==origin)
+    throw new Error('文件操作来源无效');
+  if(typeof mediaId!=='number' || !Number.isSafeInteger(mediaId) || mediaId<=0 || !['recycle','permanent'].includes(String(mode)))
+    throw new Error('删除参数无效');
+  // The service owns path resolution, the shell delete call and the index purge.
+  // The renderer only ever submits an indexed ID plus a deletion mode.
+  const response=await fetch(`${origin}/api/media/${mediaId}/delete`,{
+    method:'POST',
+    headers:{'X-AVHub-Token':sessionToken,'Content-Type':'application/json','Origin':origin},
+    body:JSON.stringify({mode}),
+    signal:AbortSignal.timeout(30000),
+  });
+  if(!response.ok){
+    const detail=await response.json().catch(()=>({} as {detail?:string})) as {detail?:string};
+    throw new Error(detail.detail || '无法删除视频文件');
+  }
+  return await response.json() as {ok:boolean;id:number;mode:string};
+});
+
 ipcMain.handle('avhub:screenshot-action',async(event,id:unknown,action:unknown)=>{
   trustedWindow(event);
   if(!((action==='reveal'&&typeof id==='string'&&/^[a-f0-9]{32}$/.test(id))||(action==='folder'&&id===null)))throw new Error('截图操作参数无效');

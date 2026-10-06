@@ -121,7 +121,30 @@ main>header {background:var(--ui-bg);border-color:var(--ui-divider);gap:20px;min
 .media-actions .media-menu>button {display:flex;align-items:center;gap:10px;padding:10px;font-size:12px;border-radius:7px;color:var(--ui-secondary)}
 .media-actions .media-menu>button .ui-icon {color:var(--ui-muted)}
 .media-actions .media-menu>button:hover,.media-actions .media-menu>button:focus-visible {background:var(--ui-hover);color:var(--ui-text)}
+.media-actions .media-menu>button.danger {color:var(--ui-danger)}
+.media-actions .media-menu>button.danger .ui-icon {color:var(--ui-danger)}
+.media-actions .media-menu>button.danger:hover,.media-actions .media-menu>button.danger:focus-visible {background:color-mix(in srgb,var(--ui-danger) 14%,transparent);color:var(--ui-danger)}
 .media-actions .media-menu>small {border-top:1px solid var(--ui-divider);margin:5px 4px 0;padding:9px 5px;color:var(--ui-muted);font-size:10px}
+
+/* Destructive confirmation: mode choice must be explicit, never a default submit. */
+.modal.delete-dialog {max-width:420px}
+.delete-dialog h2 {display:flex;align-items:center;gap:8px;margin:0 34px 6px 0;font-size:16px;font-weight:700;color:var(--ui-text)}
+.delete-dialog h2 .ui-icon {color:var(--ui-danger)}
+.delete-dialog .delete-target {margin:0 0 4px;font-size:13px;font-weight:600;color:var(--ui-text);overflow-wrap:anywhere}
+.delete-dialog .delete-note {margin:0 0 16px;font-size:12px;line-height:1.6;color:var(--ui-muted)}
+.delete-dialog .delete-modes {display:flex;flex-direction:column;gap:8px;margin:0;padding:0;border:0}
+.delete-dialog .delete-modes legend {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.delete-dialog .delete-modes label {display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1px solid var(--ui-border);border-radius:10px;cursor:pointer;transition:border-color .12s,background .12s}
+.delete-dialog .delete-modes label:hover {background:var(--ui-hover)}
+.delete-dialog .delete-modes label.selected {border-color:var(--ui-accent);background:color-mix(in srgb,var(--ui-accent) 9%,transparent)}
+.delete-dialog .delete-modes label:has(input[value="permanent"]).selected {border-color:var(--ui-danger);background:color-mix(in srgb,var(--ui-danger) 10%,transparent)}
+.delete-dialog .delete-modes input {margin:3px 0 0;flex:none;accent-color:var(--ui-accent)}
+.delete-dialog .delete-modes span {display:flex;flex-direction:column;gap:2px;min-width:0}
+.delete-dialog .delete-modes strong {font-size:12.5px;font-weight:600;color:var(--ui-text)}
+.delete-dialog .delete-modes label:has(input[value="permanent"]).selected strong {color:var(--ui-danger)}
+.delete-dialog .delete-modes small {font-size:11px;color:var(--ui-muted)}
+.delete-dialog .delete-buttons {display:flex;justify-content:flex-end;gap:9px;margin-top:20px}
+.delete-dialog .delete-buttons .ui-button {min-width:96px;justify-content:center}
 
 /* Surfaces and dialogs share borders, radius, typography and action hierarchy. */
 .modal-backdrop {background:#03070cc7;backdrop-filter:blur(5px);padding:18px;z-index:20}

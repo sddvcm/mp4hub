@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('avhubDesktop', {
   pickDirectory:(purpose:'video'|'screenshot')=>ipcRenderer.invoke('avhub:pick-directory',purpose) as Promise<{path:string}|{cancelled:true}>,
   screenshotAction:(id:string|null,action:'reveal'|'folder')=>ipcRenderer.invoke('avhub:screenshot-action',id,action) as Promise<{ok:boolean}>,
   mediaAction:(mediaId:number,action:'reveal'|'open')=>ipcRenderer.invoke('avhub:media-action',mediaId,action) as Promise<{ok:boolean}>,
+  deleteMedia:(mediaId:number,mode:'recycle'|'permanent')=>ipcRenderer.invoke('avhub:media-delete',mediaId,mode) as Promise<{ok:boolean;id:number;mode:string}>,
   getWindowState: () => ipcRenderer.invoke('avhub:window-state'),
   setWindowMode: (value: {purePlayback?:boolean;alwaysOnTop?:boolean;videoAspectRatio?:number}) => ipcRenderer.invoke('avhub:window-mode', value),
   windowAction: (action:'minimize'|'maximize'|'close') => ipcRenderer.invoke('avhub:window-action', action),
