@@ -44,11 +44,20 @@ export function MediaActions({media,update,changed,notify}: {
     if(lock.current)return;
     lock.current=true;setBusy(true);
     try {
-      if(window.avhubDesktop?.deleteMedia)await window.avhubDesktop.deleteMedia(media.id,mode);
-      else await api(`/api/media/${media.id}/delete`,json('POST',{mode}));
+      let released:string[]=[];
+      if(window.avhubDesktop?.deleteMedia) {
+        const result=await window.avhubDesktop.deleteMedia(media.id,mode);
+        released=result?.released??[];
+      } else {
+        const result=await api<{released?:string[]}>(`/api/media/${media.id}/delete`,json('POST',{mode}));
+        released=result?.released??[];
+      }
       setConfirming(false);setOpen(false);
       changed?.();
-      notify(mode==='permanent'?'视频已彻底删除，已从媒体库移除':'视频已移入回收站，已从媒体库移除');
+      const done=mode==='permanent'?'视频已彻底删除，已从媒体库移除':'视频已移入回收站，已从媒体库移除';
+      // When the file was open in a player, the service had to close it first.
+      // Saying which app was closed avoids the impression that it vanished.
+      notify(released.length?`${done}（已先关闭占用该文件的 ${released.join('、')}）`:done);
     } catch(e){notify(errorText(e));}
     finally {lock.current=false;setBusy(false);}
   }

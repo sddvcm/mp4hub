@@ -1,8 +1,12 @@
+import asyncio
+import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
 from fastapi import HTTPException
+from app import media_files, self_handles
 from app.media_delivery import original_file_response
 
 
@@ -80,3 +84,108 @@ class MediaDeliveryTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException) as error:
                 original_file_response(path)
             self.assertEqual(error.exception.status_code, 404)
+
+
+class SelfHandleTests(unittest.IsolatedAsyncioTestCase):
+    """The backend must not lock a video it is streaming against its own delete.
+
+    A direct-play response keeps the file open for as long as the player's Range
+    connection lives, so deleting a playing video used to fail with WinError 32.
+    These tests pin the contract that closes that hole: the live descriptor is
+    registered, ``close_for`` really frees the file, and the interrupted response
+    unwinds without raising.
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='avhub-selflock-')
+        self.source = Path(self.temp.name) / 'playing.mp4'
+        self.source.write_bytes(bytes(range(256)) * 8192)  # 2 MiB, several chunks
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    async def stream_and_freeze(self):
+        """Start a GET, stop on the first body chunk, and return the controls."""
+        started = asyncio.Event()
+        release = threading.Event()
+        sent = []
+
+        async def send(message):
+            sent.append(message)
+            if message['type'] == 'http.response.body' and message.get('body') and not started.is_set():
+                started.set()
+                await asyncio.to_thread(release.wait)
+
+        async def receive():
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+        scope = {'type': 'http', 'method': 'GET', 'http_version': '1.1', 'scheme': 'http',
+                 'path': '/media/1/file', 'raw_path': b'/media/1/file', 'query_string': b'',
+                 'root_path': '', 'headers': [(b'host', b'127.0.0.1')],
+                 'client': ('127.0.0.1', 1), 'server': ('127.0.0.1', 80), 'extensions': {}}
+        task = asyncio.create_task(original_file_response(self.source)(scope, receive, send))
+        await asyncio.wait_for(started.wait(), timeout=5)
+        return task, release
+
+    async def test_live_stream_registers_then_delete_closes_it(self):
+        task, release = await self.stream_and_freeze()
+        try:
+            self.assertTrue(self_handles.open_on(self.source))
+            self.assertEqual(media_files.occupancy(self.source), 'locked')
+
+            # The delete flow's fix: stop our own reader, then the file is free.
+            self.assertEqual(self_handles.close_for(self.source), 1)
+            self.assertFalse(self_handles.open_on(self.source))
+            self.assertEqual(media_files.occupancy(self.source), 'free')
+        finally:
+            release.set()
+            # The fd is already closed, so the frozen reader must unwind and the
+            # response must end cleanly instead of surfacing the EBADF.
+            await asyncio.wait_for(task, timeout=5)
+
+    async def test_interrupted_stream_finishes_without_raising(self):
+        """The fd-close must surface as a clean end-of-response, never a 500."""
+        started = asyncio.Event()
+
+        async def send(message):
+            if message['type'] == 'http.response.body' and message.get('body') and not started.is_set():
+                started.set()
+                # Close our own handle at the exact moment the body is live.
+                self_handles.close_for(self.source)
+
+        async def receive():
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+        scope = {'type': 'http', 'method': 'GET', 'http_version': '1.1', 'scheme': 'http',
+                 'path': '/media/1/file', 'raw_path': b'/media/1/file', 'query_string': b'',
+                 'root_path': '', 'headers': [(b'host', b'127.0.0.1')],
+                 'client': ('127.0.0.1', 1), 'server': ('127.0.0.1', 80), 'extensions': {}}
+        await asyncio.wait_for(original_file_response(self.source)(scope, receive, send), timeout=5)
+        self.assertTrue(started.is_set())
+        self.assertFalse(self_handles.open_on(self.source))
+
+    async def test_head_request_does_not_register_a_handle(self):
+        async def send(message):
+            pass
+
+        async def receive():
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+        scope = {'type': 'http', 'method': 'HEAD', 'http_version': '1.1', 'scheme': 'http',
+                 'path': '/media/1/file', 'raw_path': b'/media/1/file', 'query_string': b'',
+                 'root_path': '', 'headers': [(b'host', b'127.0.0.1')],
+                 'client': ('127.0.0.1', 1), 'server': ('127.0.0.1', 80), 'extensions': {}}
+        await original_file_response(self.source)(scope, receive, send)
+        self.assertFalse(self_handles.open_on(self.source))
+
+    def test_short_name_and_long_name_resolve_to_one_key(self):
+        """8.3 short paths and their long form must address the same entry."""
+        handle = os.open(self.source, os.O_RDONLY)
+        try:
+            entry = self_handles.register(handle, self.source)
+            self.assertTrue(self_handles.open_on(self.source))
+            self.assertTrue(self_handles.open_on(Path(self.source).resolve()))
+        finally:
+            self_handles.unregister(entry)
+            os.close(handle)
+        self.assertFalse(self_handles.open_on(self.source))

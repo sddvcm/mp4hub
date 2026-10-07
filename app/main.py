@@ -29,6 +29,8 @@ from starlette.background import BackgroundTask
 from .playback import PlaybackManager
 from .media_delivery import original_file_response
 from . import media_files
+from . import process_probe
+from . import self_handles
 from .scanning import ScanManager
 from .path_index import RootPathIndex
 from .folders import relative_folder, directory_prefix, like_literal, directory_clause
@@ -1676,18 +1678,68 @@ def delete_media_file(media_id:int,body:DeleteMediaInput,request:Request):
     `mode` is 'recycle' (Recycle Bin) or 'permanent'. Both paths are equally
     destructive from the library's point of view, so the confirmation lives in the
     UI and the service only enforces origin, platform and file-type safety.
+
+    Windows refuses to unlink a file that another process still holds open, and
+    the usual culprit is the player the user launched from the card menu. Because
+    the UI has already confirmed the intent to delete, a sharing violation is
+    answered by terminating the application holding the file and retrying once,
+    rather than by bouncing ``WinError 32`` back to the user. The names of the
+    processes that were ended come back in the response so the UI can say so.
     """
     if request.url.hostname not in {'127.0.0.1','localhost'} or request.headers.get('origin')!=str(request.base_url).rstrip('/'):
         raise HTTPException(403,'仅允许本机应用发起文件操作')
     if sys.platform!='win32':raise HTTPException(501,'此功能仅支持 Windows')
     source=native_media_path(media_id)
-    try:
+
+    def _remove() -> None:
         if body.mode=='permanent':media_files.permanent([source])
         else:media_files.recycle([source])
-    except media_files.DeleteError as exc:
-        raise HTTPException(503,str(exc)) from exc
+
+    released:list[str]=[]
+    try:
+        _remove()
+    except media_files.DeleteError:
+        # The first attempt failed. The most common reason is not another program
+        # at all: it is *this* backend, still streaming the very file the user is
+        # deleting. A direct-play response holds the file open for as long as the
+        # player's Range connection lives (potentially the whole movie), and a
+        # transcode session keeps it open in FFmpeg. `process_probe.release()`
+        # deliberately never kills our own tree, so the only way out is to stop
+        # serving it here and drop the descriptor ourselves.
+        playback.stop_for_source(source)
+        self_handles.close_for(source)
+        # A live non-HLS reader can take a moment to unwind after its fd is
+        # closed; give the OS a beat before the second attempt.
+        time.sleep(0.15)
+
+        # Still locked? Then it really is someone else — the player the user
+        # launched, a cloud-drive sync process, and so on. Only a genuinely
+        # exclusive open can be helped by terminating the holder, while a plain
+        # permission refusal would just cost a pointless wait (and could close a
+        # program for nothing).
+        #
+        # The probe is also what makes this work on user-mode filesystems
+        # (RaiDrive's cbfs6, WinFsp, Dokany): their locks never appear in the
+        # system handle table, so process enumeration finds nobody even when the
+        # file is exclusive.
+        try:
+            state=media_files.occupancy(source)
+        except Exception:  # noqa: BLE001 - probing must never break the flow
+            state=''
+        if state=='locked':
+            try:
+                released=process_probe.release([source])
+            except Exception:  # noqa: BLE001
+                released=[]
+        # Retry once regardless: the probe can be wrong (a driver may report
+        # ACCESS_DENIED while transiently holding the entry), and the delete is
+        # cheap compared with bouncing an error back to the user.
+        try:
+            _remove()
+        except media_files.DeleteError as exc:
+            raise HTTPException(503,str(exc)) from exc
     forget_media(media_id)
-    return {'ok':True,'id':media_id,'mode':body.mode}
+    return {'ok':True,'id':media_id,'mode':body.mode,'released':released}
 
 
 def forget_media(media_id:int)->None:

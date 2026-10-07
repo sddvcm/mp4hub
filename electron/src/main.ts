@@ -172,13 +172,16 @@ ipcMain.handle('avhub:media-delete',async(event,mediaId:unknown,mode:unknown)=>{
     method:'POST',
     headers:{'X-AVHub-Token':sessionToken,'Content-Type':'application/json','Origin':origin},
     body:JSON.stringify({mode}),
+    // The service may have to end a player holding the file and wait a moment
+    // for Windows to drop the handle before retrying, so allow more than the
+    // default round-trip budget.
     signal:AbortSignal.timeout(30000),
   });
   if(!response.ok){
     const detail=await response.json().catch(()=>({} as {detail?:string})) as {detail?:string};
     throw new Error(detail.detail || '无法删除视频文件');
   }
-  return await response.json() as {ok:boolean;id:number;mode:string};
+  return await response.json() as {ok:boolean;id:number;mode:string;released?:string[]};
 });
 
 ipcMain.handle('avhub:screenshot-action',async(event,id:unknown,action:unknown)=>{

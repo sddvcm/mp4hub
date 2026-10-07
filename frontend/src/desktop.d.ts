@@ -4,7 +4,7 @@ interface Window {
     pickDirectory:(purpose:'video'|'screenshot')=>Promise<{path:string}|{cancelled:true}>;
     screenshotAction:(id:string|null,action:'reveal'|'folder')=>Promise<{ok:boolean}>;
     mediaAction:(mediaId:number,action:'reveal'|'open')=>Promise<{ok:boolean}>;
-    deleteMedia:(mediaId:number,mode:'recycle'|'permanent')=>Promise<{ok:boolean;id:number;mode:string}>;
+    deleteMedia:(mediaId:number,mode:'recycle'|'permanent')=>Promise<{ok:boolean;id:number;mode:string;released?:string[]}>;
     getWindowState: () => Promise<WindowPlaybackState>;
     setWindowMode: (value: {purePlayback?:boolean;alwaysOnTop?:boolean;videoAspectRatio?:number}) => Promise<WindowPlaybackState>;
     windowAction: (action:'minimize'|'maximize'|'close') => Promise<WindowPlaybackState|null>;

@@ -45,6 +45,9 @@ class Session:
     worker: threading.Thread | None = None
     expired_files: set[str] = field(default_factory=set)
     owner: object | None = None
+    # The video file this session feeds FFmpeg from, kept so a delete can stop
+    # exactly the sessions holding that source instead of guessing by token.
+    source: Path | None = None
 
 
 class PlaybackManager:
@@ -135,6 +138,7 @@ class PlaybackManager:
             now = time.monotonic()
             self.sessions[token] = Session(token, folder, process, log, offset, now, now)
             self.sessions[token].owner = owner
+            self.sessions[token].source = Path(source)
             self.sessions[token].color = {'source':video_color or {},'label':'复制视频编码 · 不做色彩转换' if copy_video else color_plan['label'],
                                          'warning':'显示效果仍取决于浏览器、显卡与显示器支持' if copy_video else color_plan['warning']}
             if getattr(process, 'stdout', None) is not None:
@@ -354,6 +358,26 @@ class PlaybackManager:
                 self.condition.notify_all()
                 self._stop_process(session)
                 self._remove_folder(session.folder)
+
+    def stop_for_source(self, source: str | Path) -> int:
+        """Stop every session feeding from `source`; return how many were stopped.
+
+        Called by the delete flow before unlinking: a transcode session holds the
+        source open in FFmpeg, so the file cannot be removed until this stops.
+        Path comparison uses ``realpath``/``normcase`` because the stored media
+        path may carry an 8.3 short name (``ADMINI~1``) while the delete flow
+        hands us ``.resolve()``d long names.
+        """
+        target = os.path.normcase(os.path.realpath(str(source)))
+        stopped = 0
+        with self.lock:
+            for token, session in list(self.sessions.items()):
+                if session.source is None:
+                    continue
+                if os.path.normcase(os.path.realpath(str(session.source))) == target:
+                    self.stop(token)
+                    stopped += 1
+        return stopped
 
     def sweep(self):
         with self.lock:
